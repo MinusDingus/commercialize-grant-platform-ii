@@ -1,0 +1,6 @@
+{
+  "name": "Commercialize Grant Platform (Dana Pengkomersialan)",
+  "description": "Commercialization grant lifecycle management system featuring dual-reviewer scoring rubrics, baseline shortlisting, analyst due diligence pipeline, Jotform webhook intake, automated email alerts, and interactive treemap analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
