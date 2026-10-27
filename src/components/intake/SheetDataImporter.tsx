@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { GrantApplication } from '../../types/grant';
 import { parseSheetData, generateSqlInserts } from '../../services/sheetParser';
+import { GrantStore } from '../../services/grantStore';
+import { syncApplicationsToSupabase, isSupabaseConfigured } from '../../services/supabase';
 import {
   FileSpreadsheet,
   Upload,
@@ -15,6 +17,7 @@ import {
   FileCode2,
   Sparkles,
   Info,
+  Download,
 } from 'lucide-react';
 
 interface SheetDataImporterProps {
@@ -36,6 +39,8 @@ export const SheetDataImporter: React.FC<SheetDataImporterProps> = ({
   const [sqlStatements, setSqlStatements] = useState('');
   const [showSqlModal, setShowSqlModal] = useState(false);
   const [importStatusMsg, setImportStatusMsg] = useState<string | null>(null);
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   const handleParse = (textToParse: string) => {
     if (!textToParse.trim()) {
@@ -63,15 +68,8 @@ export const SheetDataImporter: React.FC<SheetDataImporterProps> = ({
     handleParse(val);
   };
 
-  const handleLoadSample = () => {
-    setInputText(SAMPLE_SHEET_DATA);
-    handleParse(SAMPLE_SHEET_DATA);
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const processFile = (file: File) => {
+    setUploadedFileName(file.name);
     const reader = new FileReader();
     reader.onload = (event) => {
       const content = event.target?.result as string;
@@ -81,19 +79,94 @@ export const SheetDataImporter: React.FC<SheetDataImporterProps> = ({
     reader.readAsText(file);
   };
 
-  const handleExecuteImport = () => {
-    if (parsedApps.length === 0) return;
+  const handleLoadSample = () => {
+    setUploadedFileName('DPF_Sample_Application.tsv (AIHQ SDN BHD)');
+    setInputText(SAMPLE_SHEET_DATA);
+    handleParse(SAMPLE_SHEET_DATA);
+  };
 
-    // Import into GrantStore (which syncs to localStorage and UI state)
-    // Dynamic import to avoid circular dependency
-    import('../../services/grantStore').then(({ GrantStore }) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    processFile(file);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      processFile(file);
+    }
+  };
+
+  const [isImporting, setIsImporting] = useState(false);
+  const [importModalData, setImportModalData] = useState<{
+    added: number;
+    updated: number;
+    supabaseSynced: boolean;
+    supabaseMessage: string;
+    firstApp?: GrantApplication;
+  } | null>(null);
+
+  const handleExecuteImport = async () => {
+    if (parsedApps.length === 0) {
+      alert('Please paste spreadsheet data or upload a CSV file before clicking import.');
+      return;
+    }
+
+    setIsImporting(true);
+    try {
+      // 1. Direct synchronous save to GrantStore (localStorage + memory)
       const res = GrantStore.importApplications(parsedApps);
+
+      // 2. Direct Supabase sync if credentials are configured
+      let supabaseSynced = false;
+      let supabaseMessage = 'Supabase not connected. Stored in local platform database.';
+
+      if (isSupabaseConfigured()) {
+        const supaRes = await syncApplicationsToSupabase(parsedApps);
+        supabaseSynced = supaRes.success;
+        supabaseMessage = supaRes.message;
+      }
+
+      // 3. Notify parent component to reload state
       onImportSuccess(parsedApps.length);
-      setImportStatusMsg(
-        `Successfully imported ${res.added} new application(s) and updated ${res.updated} record(s) into your CRM database!`
-      );
-      setTimeout(() => setImportStatusMsg(null), 5000);
-    });
+
+      // 4. Open success modal
+      setImportModalData({
+        added: res.added,
+        updated: res.updated,
+        supabaseSynced,
+        supabaseMessage,
+        firstApp: parsedApps[0],
+      });
+    } catch (err: any) {
+      alert(`Import error: ${err.message}`);
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const handleDownloadSqlFile = () => {
+    if (!sqlStatements) return;
+    const blob = new Blob([sqlStatements], { type: 'text/sql' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `DPF_Supabase_Import_${Date.now()}.sql`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleCopySql = () => {
@@ -119,18 +192,28 @@ export const SheetDataImporter: React.FC<SheetDataImporterProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <a
+            href="/samples/DPF_Sample_Application.csv"
+            download="DPF_Sample_Application.csv"
+            className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 flex items-center gap-1.5 transition-colors shadow-2xs"
+            title="Download the exact sample CSV with all 100+ columns and first row"
+          >
+            <Download className="w-3.5 h-3.5 text-slate-500" />
+            Download Sample CSV
+          </a>
+
           <button
             type="button"
             onClick={handleLoadSample}
             className="px-3 py-1.5 text-xs font-semibold text-sky-700 bg-sky-50 border border-sky-200 rounded-lg hover:bg-sky-100 flex items-center gap-1.5 transition-colors"
           >
             <Sparkles className="w-3.5 h-3.5 text-sky-600" />
-            Load Sample DPF Sheet (AIHQ - Firefly)
+            Load Sample DPF Data
           </button>
 
-          <label className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs">
-            <Upload className="w-3.5 h-3.5 text-slate-500" />
+          <label className="px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs">
+            <Upload className="w-3.5 h-3.5" />
             Upload .CSV / .TSV
             <input
               type="file"
@@ -154,17 +237,71 @@ export const SheetDataImporter: React.FC<SheetDataImporterProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: Paste Area & Instructions */}
         <div className="lg:col-span-6 space-y-4">
+          {/* Drag & Drop File Zone */}
+          <div
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            className={`border-2 border-dashed rounded-xl p-4 text-center transition-all ${
+              isDragging
+                ? 'border-emerald-500 bg-emerald-50/80 scale-[1.01]'
+                : uploadedFileName
+                ? 'border-emerald-300 bg-emerald-50/40'
+                : 'border-slate-200 bg-white hover:border-slate-300'
+            }`}
+          >
+            {uploadedFileName ? (
+              <div className="flex items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2 text-emerald-800 font-semibold truncate">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span className="truncate">File Loaded: {uploadedFileName}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUploadedFileName(null);
+                    setInputText('');
+                    handleParse('');
+                  }}
+                  className="text-[11px] text-slate-500 hover:text-red-600 font-medium shrink-0"
+                >
+                  Remove
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <Upload className="w-6 h-6 text-slate-400 mx-auto" />
+                <div className="text-xs text-slate-600">
+                  <label className="font-bold text-emerald-700 hover:underline cursor-pointer">
+                    Click to select CSV file
+                    <input
+                      type="file"
+                      accept=".csv,.tsv,.txt"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                    />
+                  </label>{' '}
+                  or drag and drop here
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Accepts Google Sheet exports (.csv, .tsv) with header row
+                </p>
+              </div>
+            )}
+          </div>
+
           <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
                 <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-                Paste Spreadsheet Data (Tab or Comma Separated)
+                Or Paste Spreadsheet Cells (Tab or Comma Separated)
               </label>
               {inputText && (
                 <button
                   type="button"
                   onClick={() => {
                     setInputText('');
+                    setUploadedFileName(null);
                     handleParse('');
                   }}
                   className="text-[11px] text-slate-400 hover:text-red-600 transition-colors"
@@ -178,7 +315,7 @@ export const SheetDataImporter: React.FC<SheetDataImporterProps> = ({
               value={inputText}
               onChange={handleTextChange}
               placeholder="1. Select rows in Google Sheets (including header)&#10;2. Press Ctrl+C (or Cmd+C)&#10;3. Paste here (Ctrl+V)&#10;&#10;Supported columns: 1.1.1 Organisation Name, 1.1.2 SSM, 4.1.1 Project Title, Reviewers, Scores, Documents..."
-              rows={12}
+              rows={9}
               className="w-full text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg p-3 text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 placeholder:text-slate-400"
             />
 
@@ -348,17 +485,82 @@ export const SheetDataImporter: React.FC<SheetDataImporterProps> = ({
               <div className="pt-2 border-t border-slate-200 flex items-center gap-3">
                 <button
                   type="button"
+                  disabled={isImporting}
                   onClick={handleExecuteImport}
-                  className="flex-1 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                  className={`flex-1 py-3 px-4 text-white text-xs font-bold rounded-xl shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                    isImporting
+                      ? 'bg-emerald-400 cursor-not-allowed'
+                      : 'bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99]'
+                  }`}
                 >
-                  <Database className="w-4 h-4" />
-                  Import {parsedApps.length} Application(s) to Live Platform
+                  <Database className={`w-4 h-4 ${isImporting ? 'animate-spin' : ''}`} />
+                  {isImporting
+                    ? 'Importing into Database...'
+                    : `Import ${parsedApps.length} Application(s) to Live Platform`}
                 </button>
               </div>
             )}
           </div>
         </div>
       </div>
+
+      {/* Success Notification Modal */}
+      {importModalData && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full p-6 space-y-5 animate-in fade-in zoom-in-95">
+            <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
+              <CheckCircle2 className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1">
+              <h3 className="text-base font-bold text-slate-900">Successfully Ingested to Database!</h3>
+              <p className="text-xs text-slate-500">
+                {importModalData.added} application(s) added, {importModalData.updated} updated.
+              </p>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs space-y-2">
+              <div className="flex items-center gap-2 text-slate-700">
+                <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>Saved to CRM pipeline & memory storage</span>
+              </div>
+              <div className="flex items-center gap-2 text-slate-700">
+                <Check className={`w-4 h-4 ${importModalData.supabaseSynced ? 'text-emerald-600' : 'text-slate-400'} shrink-0`} />
+                <span className="truncate">{importModalData.supabaseMessage}</span>
+              </div>
+              {importModalData.firstApp && (
+                <div className="pt-2 border-t border-slate-200 text-slate-600">
+                  Dossier: <strong>{importModalData.firstApp.id}</strong> — {importModalData.firstApp.company.name}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  if (importModalData.firstApp) {
+                    onViewApplication(importModalData.firstApp);
+                  }
+                  setImportModalData(null);
+                }}
+                className="w-full py-2.5 px-4 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-xl shadow-sm flex items-center justify-center gap-2 transition-colors cursor-pointer"
+              >
+                <span>Open in Pipeline & CRM Now</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setImportModalData(null)}
+                className="w-full py-2 px-4 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-medium rounded-xl transition-colors cursor-pointer"
+              >
+                Stay on Intake Page
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* SQL Migration Modal */}
       {showSqlModal && (
@@ -370,7 +572,7 @@ export const SheetDataImporter: React.FC<SheetDataImporterProps> = ({
                   <FileCode2 className="w-4 h-4 text-emerald-600" />
                   PostgreSQL SQL Migration for Supabase
                 </h3>
-                <p className="text-xs text-slate-500">Run this in your Supabase SQL Editor to insert directly into PostgreSQL</p>
+                <p className="text-xs text-slate-500">Compact, single-line SQL queries formatted to prevent query editor size limits</p>
               </div>
               <button
                 type="button"
@@ -381,7 +583,11 @@ export const SheetDataImporter: React.FC<SheetDataImporterProps> = ({
               </button>
             </div>
 
-            <div className="p-4 flex-1 overflow-y-auto">
+            <div className="p-4 flex-1 overflow-y-auto space-y-3">
+              <div className="p-3 bg-sky-50 border border-sky-200 rounded-lg text-sky-900 text-[11px] leading-relaxed">
+                <strong>💡 Tip:</strong> You do NOT need to run this SQL manually if your Supabase is connected in the top header — clicking <em>"Import to Live Platform"</em> will sync directly to Supabase via its API! If you prefer running SQL manually in Supabase SQL Editor, download the .sql file or copy below.
+              </div>
+
               <pre className="text-xs font-mono bg-slate-900 text-slate-100 p-4 rounded-lg overflow-x-auto whitespace-pre">
                 {sqlStatements}
               </pre>
@@ -389,16 +595,24 @@ export const SheetDataImporter: React.FC<SheetDataImporterProps> = ({
 
             <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
               <span className="text-xs text-slate-500">
-                Ready for Supabase SQL Editor
+                Single-line sanitized statements
               </span>
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleDownloadSqlFile}
+                  className="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-2xs"
+                >
+                  <Download className="w-3.5 h-3.5 text-slate-600" />
+                  Download .sql File
+                </button>
                 <button
                   type="button"
                   onClick={handleCopySql}
                   className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-2xs"
                 >
                   {isCopiedSql ? <Check className="w-3.5 h-3.5 text-white" /> : <Copy className="w-3.5 h-3.5 text-white" />}
-                  {isCopiedSql ? 'Copied to Clipboard!' : 'Copy SQL Statements'}
+                  {isCopiedSql ? 'Copied!' : 'Copy SQL Statements'}
                 </button>
                 <button
                   type="button"

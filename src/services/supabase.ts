@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { GrantApplication } from '../types/grant';
 
 const KNOWN_PROJECT_REF = 'lquzcxkjfsysssqgxvbm';
 const KNOWN_PROJECT_URL = `https://${KNOWN_PROJECT_REF}.supabase.co`;
@@ -168,6 +169,114 @@ export async function testSupabaseConnection(): Promise<{
     return {
       success: false,
       message: `Failed to connect to Supabase: ${msg}`,
+    };
+  }
+}
+
+/**
+ * Direct API sync: Upserts applications and companies into live Supabase PostgreSQL
+ */
+export async function syncApplicationsToSupabase(apps: GrantApplication[]): Promise<{
+  success: boolean;
+  message: string;
+  syncedCount: number;
+}> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return {
+      success: false,
+      message: 'Supabase is not configured or anon key is missing. Data saved to local platform store.',
+      syncedCount: 0,
+    };
+  }
+
+  try {
+    let synced = 0;
+    for (const app of apps) {
+      const c = app.company;
+      const a = app.applicant;
+      const t = app.technology;
+      const m = app.market;
+
+      // 1. Upsert company
+      const companyPayload = {
+        name: c.name,
+        ssm_number: c.ssmNumber,
+        incorporation_year: c.incorporationYear,
+        state: c.state,
+        city: c.city,
+        annual_turnover: c.annualTurnover,
+        turnover_tier: c.turnoverTier,
+        paid_up_capital: c.paidUpCapital,
+        employee_count: c.employeeCount,
+        sector: c.sector,
+        website: c.website || null,
+        address: c.address,
+      };
+
+      const { data: compData } = await client
+        .from('companies')
+        .upsert(companyPayload, { onConflict: 'ssm_number' })
+        .select('id')
+        .single();
+
+      const companyId = compData?.id || null;
+
+      // 2. Upsert application
+      const appPayload = {
+        id: app.id,
+        company_id: companyId,
+        submission_source: app.submissionSource,
+        jotform_submission_id: app.jotformSubmissionId || null,
+        status: app.status,
+        applicant_name: a.fullName,
+        applicant_designation: a.designation,
+        applicant_email: a.email,
+        applicant_phone: a.phone,
+        identification_no: a.identificationNo,
+        product_name: t.productName,
+        tagline: t.tagline || null,
+        trl_level: t.trlLevel,
+        product_description: t.productDescription,
+        ip_status: t.ipStatus,
+        production_readiness: t.productionReadiness || null,
+        current_capacity: t.currentCapacity || null,
+        target_market: m.targetMarket || null,
+        tam_sam_som: m.tamSamSom || null,
+        funding_requested: m.fundingRequested,
+        revenue_model: m.revenueModel || null,
+        export_potential: m.exportPotential,
+        assigned_reviewer_1_id: app.assignedReviewers[0] || null,
+        assigned_reviewer_2_id: app.assignedReviewers[1] || null,
+        composite_score: app.compositeScore ?? null,
+        baseline_passed: app.baselinePassed ?? false,
+        assigned_analyst_id: app.assignedAnalystId || null,
+        assigned_analyst_name: app.assignedAnalystName || null,
+        analyst_notes: app.analystNotes || null,
+      };
+
+      const { error: appErr } = await client
+        .from('applications')
+        .upsert(appPayload, { onConflict: 'id' });
+
+      if (appErr) {
+        console.warn('Failed to sync application to Supabase:', appErr.message);
+      } else {
+        synced++;
+      }
+    }
+
+    return {
+      success: true,
+      message: `Successfully synced ${synced} application(s) directly to Supabase PostgreSQL!`,
+      syncedCount: synced,
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return {
+      success: false,
+      message: `Supabase sync error: ${msg}`,
+      syncedCount: 0,
     };
   }
 }

@@ -430,13 +430,13 @@ export function parseSheetData(rawText: string, baselineThreshold = 75.0): {
 }
 
 /**
- * Generate standard PostgreSQL INSERT statements ready to run in Supabase SQL Editor
+ * Generate clean, compact PostgreSQL INSERT statements ready to run in Supabase SQL Editor
  */
 export function generateSqlInserts(apps: GrantApplication[]): string {
   const statements: string[] = [
     `-- Commercialize Grant Platform (Dana Pengkomersialan)`,
-    `-- Generated SQL migration for ${apps.length} application(s)`,
-    `-- Run in Supabase SQL Editor (>_ icon) to populate live tables`,
+    `-- Clean SQL insert batch for ${apps.length} application(s)`,
+    `-- Tip: Run in Supabase SQL Editor (>_ icon). Inner newlines have been sanitized.`,
     ``,
   ];
 
@@ -446,23 +446,24 @@ export function generateSqlInserts(apps: GrantApplication[]): string {
     const t = app.technology;
     const m = app.market;
 
-    const escapeSql = (str: string | undefined | null) => {
+    const escapeSql = (str: string | undefined | null, maxLen = 350) => {
       if (!str) return `''`;
-      return `'${str.replace(/'/g, "''")}'`;
+      const clean = str.replace(/[\r\n\t]+/g, ' ').replace(/'/g, "''").trim().slice(0, maxLen);
+      return `'${clean}'`;
     };
 
     // Insert company
     statements.push(`-- [${idx + 1}/${apps.length}] ${c.name} (${app.id})`);
     statements.push(
       `INSERT INTO companies (name, ssm_number, incorporation_year, state, city, annual_turnover, turnover_tier, paid_up_capital, employee_count, sector, website, address) ` +
-      `VALUES (${escapeSql(c.name)}, ${escapeSql(c.ssmNumber)}, ${c.incorporationYear}, ${escapeSql(c.state)}, ${escapeSql(c.city)}, ${c.annualTurnover}, ${escapeSql(c.turnoverTier)}, ${c.paidUpCapital}, ${c.employeeCount}, ${escapeSql(c.sector)}, ${escapeSql(c.website)}, ${escapeSql(c.address)}) ` +
+      `VALUES (${escapeSql(c.name)}, ${escapeSql(c.ssmNumber)}, ${c.incorporationYear}, ${escapeSql(c.state)}, ${escapeSql(c.city)}, ${c.annualTurnover}, ${escapeSql(c.turnoverTier)}, ${c.paidUpCapital}, ${c.employeeCount}, ${escapeSql(c.sector)}, ${escapeSql(c.website)}, ${escapeSql(c.address, 200)}) ` +
       `ON CONFLICT (ssm_number) DO UPDATE SET name = EXCLUDED.name;`
     );
 
     // Insert application
     statements.push(
       `INSERT INTO applications (id, submission_source, jotform_submission_id, status, applicant_name, applicant_designation, applicant_email, applicant_phone, identification_no, product_name, tagline, trl_level, product_description, ip_status, production_readiness, current_capacity, target_market, tam_sam_som, funding_requested, revenue_model, export_potential, assigned_reviewer_1_id, assigned_reviewer_2_id, composite_score, baseline_passed, assigned_analyst_id, assigned_analyst_name, analyst_notes) ` +
-      `VALUES (${escapeSql(app.id)}, 'jotform_webhook', ${escapeSql(app.jotformSubmissionId)}, ${escapeSql(app.status)}, ${escapeSql(a.fullName)}, ${escapeSql(a.designation)}, ${escapeSql(a.email)}, ${escapeSql(a.phone)}, ${escapeSql(a.identificationNo)}, ${escapeSql(t.productName)}, ${escapeSql(t.tagline)}, ${t.trlLevel}, ${escapeSql(t.productDescription)}, ${escapeSql(t.ipStatus)}, ${escapeSql(t.productionReadiness)}, ${escapeSql(t.currentCapacity)}, ${escapeSql(m.targetMarket)}, ${escapeSql(m.tamSamSom)}, ${m.fundingRequested}, ${escapeSql(m.revenueModel)}, ${m.exportPotential}, 'rev-05', 'rev-06', ${app.compositeScore ?? 'NULL'}, ${app.baselinePassed ? 'TRUE' : 'FALSE'}, 'ana-01', 'Shafiq Fauzi', ${escapeSql(app.analystNotes)}) ` +
+      `VALUES (${escapeSql(app.id)}, 'jotform_webhook', ${escapeSql(app.jotformSubmissionId)}, ${escapeSql(app.status)}, ${escapeSql(a.fullName)}, ${escapeSql(a.designation)}, ${escapeSql(a.email)}, ${escapeSql(a.phone)}, ${escapeSql(a.identificationNo)}, ${escapeSql(t.productName, 200)}, ${escapeSql(t.tagline, 150)}, ${t.trlLevel}, ${escapeSql(t.productDescription, 400)}, ${escapeSql(t.ipStatus)}, ${escapeSql(t.productionReadiness, 250)}, ${escapeSql(t.currentCapacity, 250)}, ${escapeSql(m.targetMarket, 200)}, ${escapeSql(m.tamSamSom, 200)}, ${m.fundingRequested}, ${escapeSql(m.revenueModel, 200)}, ${m.exportPotential ? 'TRUE' : 'FALSE'}, 'rev-05', 'rev-06', ${app.compositeScore ?? 'NULL'}, ${app.baselinePassed ? 'TRUE' : 'FALSE'}, 'ana-01', 'Shafiq Fauzi', ${escapeSql(app.analystNotes, 250)}) ` +
       `ON CONFLICT (id) DO UPDATE SET composite_score = EXCLUDED.composite_score, status = EXCLUDED.status;`
     );
     statements.push('');
