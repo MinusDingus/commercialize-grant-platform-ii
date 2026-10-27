@@ -203,7 +203,7 @@ export default function App() {
                 activeTab === 'jotform' ? 'text-sky-700 border-b-2 border-sky-600 font-bold' : ''
               }`}
             >
-              Jotform Sync
+              Sheet & Jotform Intake
             </button>
             <button
               onClick={() => setActiveTab('docs')}
@@ -271,7 +271,7 @@ export default function App() {
           { key: 'treemap', label: 'Treemap' },
           { key: 'applicant', label: 'Applicant' },
           { key: 'email', label: 'Emails' },
-          { key: 'jotform', label: 'Jotform' },
+          { key: 'jotform', label: 'Sheets / Intake' },
           { key: 'docs', label: 'Docs (.md)' },
         ].map((t) => (
           <button
@@ -333,7 +333,12 @@ export default function App() {
           <JotformHub
             onProcessWebhook={handleProcessJotform}
             onViewApplication={(app) => {
+              setReviewingApp(app);
               setActiveTab('crm');
+            }}
+            onImportSuccess={(count) => {
+              reloadData();
+              showToast(`Imported ${count} application(s) from spreadsheet into platform!`);
             }}
           />
         )}

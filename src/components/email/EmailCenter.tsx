@@ -180,7 +180,7 @@ export const EmailCenter: React.FC<EmailCenterProps> = ({
       } else if (tmpl.role === 'reviewer') {
         setCustomRecipient('reviewers@evaluators.my');
       } else {
-        setCustomRecipient('analyst.desk@mranti.my');
+        setCustomRecipient('shafiqfauzi@mranti.my');
       }
     }
   };

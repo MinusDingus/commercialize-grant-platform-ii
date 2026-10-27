@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { GrantApplication } from '../../types/grant';
+import { SheetDataImporter } from '../intake/SheetDataImporter';
 import {
   Webhook,
   Play,
@@ -11,11 +12,13 @@ import {
   Layers,
   ArrowRight,
   Paperclip,
+  FileSpreadsheet,
 } from 'lucide-react';
 
 interface JotformHubProps {
   onProcessWebhook: (payload: any) => GrantApplication;
   onViewApplication: (app: GrantApplication) => void;
+  onImportSuccess?: (count: number) => void;
 }
 
 const FORM_1_INTAKE_PAYLOAD = {
@@ -62,7 +65,9 @@ const FORM_2_DUE_DILIGENCE_PAYLOAD = {
 export const JotformHub: React.FC<JotformHubProps> = ({
   onProcessWebhook,
   onViewApplication,
+  onImportSuccess,
 }) => {
+  const [hubMode, setHubMode] = useState<'sheet' | 'webhook'>('sheet');
   const [activeFormPreset, setActiveFormPreset] = useState<'form1' | 'form2'>('form1');
   const [payloadText, setPayloadText] = useState(
     JSON.stringify(FORM_1_INTAKE_PAYLOAD, null, 2)
@@ -90,11 +95,60 @@ export const JotformHub: React.FC<JotformHubProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-xs flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <span className="text-xs uppercase tracking-wider font-bold text-sky-700">Third-Party Intake Integration</span>
-          <h2 className="text-lg font-bold text-slate-900 mt-0.5">Jotform Webhook Integration Hub</h2>
+      {/* Top Mode Selector Tabs */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white border border-slate-200 rounded-xl p-2 shadow-2xs">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setHubMode('sheet')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+              hubMode === 'sheet'
+                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+            }`}
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+            <span>Google Sheets & CSV/TSV Importer</span>
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-200/60 text-emerald-900">
+              Recommended
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setHubMode('webhook')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+              hubMode === 'webhook'
+                ? 'bg-sky-50 text-sky-800 border border-sky-200 shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+            }`}
+          >
+            <Webhook className="w-4 h-4 text-sky-600" />
+            <span>Jotform Webhook Simulator & Sync</span>
+          </button>
+        </div>
+
+        <div className="text-[11px] text-slate-500 hidden sm:block pr-2">
+          {hubMode === 'sheet'
+            ? 'Paste or upload grant spreadsheet rows'
+            : 'Listen for live webhooks from Jotform forms'}
+        </div>
+      </div>
+
+      {hubMode === 'sheet' ? (
+        <SheetDataImporter
+          onImportSuccess={(count) => {
+            if (onImportSuccess) onImportSuccess(count);
+          }}
+          onViewApplication={onViewApplication}
+        />
+      ) : (
+        <div className="space-y-6">
+          {/* Header */}
+          <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-xs flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <span className="text-xs uppercase tracking-wider font-bold text-sky-700">Third-Party Intake Integration</span>
+              <h2 className="text-lg font-bold text-slate-900 mt-0.5">Jotform Webhook Integration Hub</h2>
           <p className="text-xs text-slate-500 mt-1">
             Connect your Jotform commercialization grant forms directly into this CRM backend. Incoming submissions are parsed and mapped to the central pipeline with zero latency.
           </p>
@@ -395,6 +449,8 @@ export const JotformHub: React.FC<JotformHubProps> = ({
           )}
         </div>
       </div>
+        </div>
+      )}
     </div>
   );
 };

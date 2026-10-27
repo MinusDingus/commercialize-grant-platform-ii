@@ -54,6 +54,21 @@ export class GrantStore {
             }
           }
         });
+        // Ensure analyst name is Shafiq Fauzi
+        parsed.forEach((app) => {
+          if (app.assignedAnalystId === 'ana-01' || app.assignedAnalystName?.includes('Nurul Huda')) {
+            app.assignedAnalystName = 'Shafiq Fauzi';
+            needsSave = true;
+          }
+        });
+        // Ensure DPF000230 (AIHQ SDN BHD) is present
+        if (!parsed.some((a) => a.id === 'DPF000230')) {
+          const dpf230 = INITIAL_APPLICATIONS.find((a) => a.id === 'DPF000230');
+          if (dpf230) {
+            parsed.unshift(dpf230);
+            needsSave = true;
+          }
+        }
         if (needsSave) {
           this.saveApplications(parsed);
         }
@@ -91,7 +106,21 @@ export class GrantStore {
   static getNotifications(): EmailNotification[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS);
-      if (data) return JSON.parse(data);
+      if (data) {
+        const parsed: EmailNotification[] = JSON.parse(data);
+        let needsSave = false;
+        parsed.forEach((n) => {
+          if (n.recipientEmail === 'nurul.huda@mranti.my' || n.recipientEmail === 'analyst@mranti.my') {
+            n.recipientEmail = 'shafiqfauzi@mranti.my';
+            n.recipientName = 'Shafiq Fauzi';
+            needsSave = true;
+          }
+        });
+        if (needsSave) {
+          this.saveNotifications(parsed);
+        }
+        return parsed;
+      }
     } catch (e) {
       console.warn('Failed to parse notifications, using defaults', e);
     }
@@ -118,6 +147,29 @@ export class GrantStore {
     const updated = [newEmail, ...notifications];
     this.saveNotifications(updated);
     return newEmail;
+  }
+
+  static importApplications(newApps: GrantApplication[]): { added: number; updated: number } {
+    const existing = this.getApplications();
+    let added = 0;
+    let updated = 0;
+
+    const map = new Map<string, GrantApplication>();
+    existing.forEach((a) => map.set(a.id, a));
+
+    newApps.forEach((app) => {
+      if (map.has(app.id)) {
+        map.set(app.id, { ...map.get(app.id)!, ...app, updatedAt: new Date().toISOString() });
+        updated++;
+      } else {
+        map.set(app.id, app);
+        added++;
+      }
+    });
+
+    const combined = Array.from(map.values());
+    this.saveApplications(combined);
+    return { added, updated };
   }
 
   static createApplication(
@@ -391,8 +443,8 @@ export class GrantStore {
         this.dispatchEmail({
           applicationId: existingApp.id,
           companyName: existingApp.company.name,
-          recipientEmail: 'analyst@mranti.my',
-          recipientName: existingApp.assignedAnalystName || 'Lead Grant Analyst',
+          recipientEmail: 'shafiqfauzi@mranti.my',
+          recipientName: existingApp.assignedAnalystName || 'Shafiq Fauzi',
           recipientRole: 'analyst',
           subject: `Stage 2 Due Diligence Form Submitted: ${existingApp.company.name} [${existingApp.id}]`,
           body: `Dear ${existingApp.assignedAnalystName || 'Lead Grant Analyst'},\n\nThe applicant for ${existingApp.company.name} (${existingApp.id}) has successfully completed and submitted Form 2 (Supplementary Due Diligence).\n\nKey Information Captured in Form 2:\n- Commercial Market Traction: ${rawAnswers.market_traction_summary || 'Submitted with verified metrics'}\n- 3-Year Future Revenue Target: ${rawAnswers.future_plan_summary || 'Detailed expansion roadmap provided'}\n- Supplementary Attachments: ${newDocs.length > 0 ? newDocs.map(d => d.name).join(', ') : 'Direct upload attachments'}\n\nThe dossier has been automatically updated and linked to their primary Form 1 record.\n\nCommercialize Grant Operations Desk`,
