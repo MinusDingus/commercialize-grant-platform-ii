@@ -23,6 +23,7 @@ import {
 interface SheetDataImporterProps {
   onImportSuccess: (count: number) => void;
   onViewApplication: (app: GrantApplication) => void;
+  onNavigateToCrm?: () => void;
 }
 
 const SAMPLE_SHEET_DATA = `Submission Date\tFlow Status\tApplication ID\tSubmission ID\tApplication Status\tLast Update Date\t1.1.1 Organisation Name\t1.1.2 SSM Registration Number\t1.1.3 Upload SSM Corporate Information\t1.1.4 Incorporation Date\t1.1.5 Company Website URL\t1.1.6 Company Category\t1.1.7 Industry\t1.1.8 Registered Business Address\t1.1.9 Registered Address State\t1.1.10 Is Bumiputra?\t1.1.11 Majority Malaysian-Owned?\t2.1.1.1 Name\t2.1.1.2 Designation\t2.1.1.3 Identification No. \t2.1.1.4 Role in Project\t2.1.1.5 Email\t2.1.1.6 Contact Number\t2.1.1.7 Upload CV\t2.1.2.1 Name\t2.1.2.2 Designation\t2.1.2.3 Identification No. \t2.1.2.4 Role in Project\t2.1.2.5 Email\t2.1.2.6 Contact Number\t2.1.2.7 Upload CV\t2.1.3.1 Name\t2.1.3.2 Designation\t2.1.3.3 Identification No. \t2.1.3.4 Role in Project\t2.1.3.5 Email\t2.1.3.6 Contact Number\t2.1.3.7 Upload CV\t2.2.1 Describe team competency and experience relevant to the project \t2.2.2 Explain governance and project management structure\t3.1.1.1 Organisation Name\t3.1.1.2 Role & Scope of Work\t3.1.1.3 Contribution (RM), if any\t3.1.1.4 Contact Person\t3.1.1.5 Designation\t3.1.1.6 Email\t3.1.1.7 Contact Number\t3.1.1.8 Upload CV\t3.1.1.9 Upload Signed Agreements\t3.1.2.1 Organisation Name\t3.1.2.2 Role & Scope of Work\t3.1.2.3 Contribution (RM), if any\t3.1.2.4 Contact Person\t3.1.2.5 Designation\t3.1.2.6 Email\t3.1.2.7 Contact Number\t3.1.2.8 Upload CV\t3.1.2.9 Upload Signed Agreements\t3.1.3.1 Organisation Name\t3.1.3.2 Role & Scope of Work\t3.1.3.3 Contribution (RM), if any\t3.1.3.4 Contact Person\t3.1.3.5 Designation\t3.1.3.6 Email\t3.1.3.7 Contact Number\t3.1.3.8 Upload CV\t3.1.3.9 Upload Signed Agreements\t4.1.1 Project Title\t4.1.2 Executive Summary\t4.1.3 Problem Statement\t4.1.4 Proposed Solution\t4.1.5 Value Proposition\t4.1.6 Regulatory / Standards / Compliance Requirements\t4.1.7 Upload Certificate\t4.1.8 10–10 MySTIE Technology Driver\t4.1.9 10–10 MySTIE Socio-Economic\t4.2.1 Technology Architecture & System Overview\t4.2.1.1 Upload Document(s)\t4.2.2 Development History & Validation Evidence\t4.2.2.1 Upload Document(s)\t4.2.3 IP Status\t4.2.3.1 Upload Document(s)\t4.2.4 Technical Risks & Mitigation\t4.2.5 Design for Manufacturing (DFM) & Scalability\t4.2.6 Infrastructure & Resource Requirements\t4.2.7 Ethical, Safety & Environmental Considerations\t5.1.1 What problem does your innovation solve and for whom?\t5.1.1.1 Upload Document\t5.1.2 Target customer segments\t5.1.2.1 Upload Document\t5.1.3 Evidence of measurable demand\t5.1.3.1 Upload Document\t5.2.1 Direct & indirect competitors\t5.2.2 Barriers to entry\t5.3.1 Revenue streams & validation evidence\t5.3.2 Pricing strategy\t5.3.3 Go-to-market strategy (next 24 months)\t5.4.1 Product development & manufacturing plan\t5.4.2 Regulatory/compliance continuity plan\t5.4.3 Cybersecurity, data protection & operational risk mitigation\t5.4.4 Customer success & retention strategy\t5.5.1 Cost to produce one unit\t5.5.2 Selling Price (RM)\t5.5.3 Customer acquisition cost (RM), (if applicable)\t6.1.1 Milestone 1 (0–6 months) - Add new row for each line item\t6.1.2 Milestone 2 (6–12 months) - Add new row for each line item\t6.2 Key overall project deliverables\t7.1 Declaration\t7.2 PDPA consent\t7.3 Name & Designation of Authorised Signatory \t7.4 Date\t7.5 Company Stamp / Authorisation Letter\tTechnology Readiness Level (TRL)\tCustomer Readiness Level (CRL)\tLocal Entity\tEmail\tContact Number\tName\tOrganisation Name\tDesignation\tSection 4 Combine Remarks\tSection 5 Combine Remarks\tSection 6 Combine Remarks\tOverall Combine Remarks\tReviewer 1\tReviewer 2\tSection 1 Weight Score\tSection 2 Weight Score\tSection 3 Weight Score\tSection 4 Weight Score\tSection 5 Weight Score\tSection 6 Weight Score\tTotal Score\tSection 1 Combine Remarks\tSection 2 Combine Remarks\tSection 3 Combine Remarks\tSubmission IP
@@ -31,6 +32,7 @@ Apr 15, 2026\tCOMPLETED\tDPF000230\t6520778441524576291\treview_done\tApr 19, 20
 export const SheetDataImporter: React.FC<SheetDataImporterProps> = ({
   onImportSuccess,
   onViewApplication,
+  onNavigateToCrm,
 }) => {
   const [inputText, setInputText] = useState('');
   const [parsedApps, setParsedApps] = useState<GrantApplication[]>([]);
@@ -127,17 +129,21 @@ export const SheetDataImporter: React.FC<SheetDataImporterProps> = ({
 
     setIsImporting(true);
     try {
-      // 1. Direct synchronous save to GrantStore (localStorage + memory)
+      // 1. Direct synchronous save to GrantStore (memory + IndexedDB + safe localStorage)
       const res = GrantStore.importApplications(parsedApps);
 
       // 2. Direct Supabase sync if credentials are configured
       let supabaseSynced = false;
-      let supabaseMessage = 'Supabase not connected. Stored in local platform database.';
+      let supabaseMessage = 'Supabase not connected. Stored in local high-capacity platform database.';
 
       if (isSupabaseConfigured()) {
-        const supaRes = await syncApplicationsToSupabase(parsedApps);
-        supabaseSynced = supaRes.success;
-        supabaseMessage = supaRes.message;
+        try {
+          const supaRes = await syncApplicationsToSupabase(parsedApps);
+          supabaseSynced = supaRes.success;
+          supabaseMessage = supaRes.message;
+        } catch (supaErr: any) {
+          supabaseMessage = `Supabase sync skipped: ${supaErr.message}`;
+        }
       }
 
       // 3. Notify parent component to reload state
@@ -230,6 +236,47 @@ export const SheetDataImporter: React.FC<SheetDataImporterProps> = ({
         <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl p-4 flex items-center gap-3 animate-in fade-in">
           <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
           <span className="text-xs font-medium">{importStatusMsg}</span>
+        </div>
+      )}
+
+      {/* Prominent Top Action Banner when Applications are Detected */}
+      {parsedApps.length > 0 && (
+        <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-sky-700 text-white rounded-xl p-4 shadow-lg flex flex-wrap items-center justify-between gap-4 border border-emerald-400/40 animate-in slide-in-from-top-2">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl bg-white/20 flex items-center justify-center text-white shrink-0 shadow-inner">
+              <Database className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-sm text-white">
+                  {parsedApps.length} Applications Detected & Mapped!
+                </h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-400/30 text-emerald-100 border border-emerald-300/40">
+                  Ready to Ingest
+                </span>
+              </div>
+              <p className="text-xs text-emerald-100 mt-0.5">
+                All 100+ columns, reviewer scores, budgets, and document attachments are parsed. Click to save into your live platform database!
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={isImporting}
+              onClick={handleExecuteImport}
+              className="px-5 py-2.5 bg-white text-emerald-900 hover:bg-emerald-50 active:scale-[0.98] text-xs font-bold rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <Database className={`w-4 h-4 text-emerald-700 ${isImporting ? 'animate-spin' : ''}`} />
+              <span>
+                {isImporting
+                  ? `Ingesting ${parsedApps.length} Applications...`
+                  : `Import All ${parsedApps.length} Applications to Live CRM`}
+              </span>
+              <ArrowRight className="w-4 h-4 text-emerald-700" />
+            </button>
+          </div>
         </div>
       )}
 
@@ -539,16 +586,32 @@ export const SheetDataImporter: React.FC<SheetDataImporterProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  if (importModalData.firstApp) {
+                  if (onNavigateToCrm) {
+                    onNavigateToCrm();
+                  } else if (importModalData.firstApp) {
                     onViewApplication(importModalData.firstApp);
                   }
                   setImportModalData(null);
                 }}
-                className="w-full py-2.5 px-4 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-xl shadow-sm flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer"
               >
-                <span>Open in Pipeline & CRM Now</span>
+                <span>Open in Pipeline & CRM Now ({importModalData.added + importModalData.updated} Applications)</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
+
+              {importModalData.firstApp && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onViewApplication(importModalData.firstApp!);
+                    setImportModalData(null);
+                  }}
+                  className="w-full py-2 px-4 bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 text-xs font-semibold rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <span>Inspect First Dossier ({importModalData.firstApp.id})</span>
+                  <ExternalLink className="w-3.5 h-3.5 text-sky-600" />
+                </button>
+              )}
 
               <button
                 type="button"

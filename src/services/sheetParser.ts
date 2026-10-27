@@ -193,10 +193,16 @@ export function parseSheetData(rawText: string, baselineThreshold = 75.0): {
     if (row.length < 5 || !row.some(cell => cell.trim().length > 0)) continue;
 
     try {
-      const appId = getCol(row, 'Application ID') || `DPF-${Date.now()}-${r}`;
-      const submissionId = getCol(row, 'Submission ID') || `SUB-${Date.now()}`;
-      const orgName = getCol(row, '1.1.1 Organisation Name') || getCol(row, 'Organisation Name') || 'Enterprise Applicant';
-      const ssm = getCol(row, '1.1.2 SSM Registration Number') || '202401099231 (1509281-U)';
+      const appId =
+        getCol(row, 'Application ID') ||
+        getCol(row, 'App ID') ||
+        getCol(row, 'Ref ID') ||
+        getCol(row, 'Application Number') ||
+        (row[2] && /^DPF/i.test(row[2]) ? row[2].trim() : '') ||
+        `DPF-${Date.now()}-${r}`;
+      const submissionId = getCol(row, 'Submission ID') || getCol(row, 'Submission No') || (row[3] ? row[3].trim() : `SUB-${Date.now()}`);
+      const orgName = getCol(row, '1.1.1 Organisation Name') || getCol(row, 'Organisation Name') || getCol(row, 'Company Name') || 'Enterprise Applicant';
+      const ssm = getCol(row, '1.1.2 SSM Registration Number') || getCol(row, 'SSM') || '202401099231 (1509281-U)';
       const ssmUrls = getCol(row, '1.1.3 Upload SSM Corporate Information');
       const incDate = getCol(row, '1.1.4 Incorporation Date') || '2024';
       const incYearMatch = incDate.match(/\b(20\d\d|19\d\d)\b/);
@@ -217,7 +223,7 @@ export function parseSheetData(rawText: string, baselineThreshold = 75.0): {
       const cvUrl = getCol(row, '2.1.1.7 Upload CV');
 
       // Project & Technology
-      const projectTitle = getCol(row, '4.1.1 Project Title') || 'Commercialization Innovation Project';
+      const projectTitle = getCol(row, '4.1.1 Project Title') || getCol(row, 'Project Title') || 'Commercialization Innovation Project';
       const execSummary = getCol(row, '4.1.2 Executive Summary') || getCol(row, '4.1.4 Proposed Solution');
       const valueProp = getCol(row, '4.1.5 Value Proposition') || 'High impact local innovation';
       const techDriver = getCol(row, '4.1.8 10–10 MySTIE Technology Driver') || '';
@@ -255,10 +261,22 @@ export function parseSheetData(rawText: string, baselineThreshold = 75.0): {
       // Status
       const appStatusRaw = getCol(row, 'Application Status').toLowerCase();
       let status: any = 'submitted';
-      if (baselinePassed) {
+      if (appStatusRaw.includes('award')) {
+        status = 'awarded';
+      } else if (appStatusRaw.includes('diligence')) {
+        status = 'analyst_due_diligence';
+      } else if (baselinePassed || appStatusRaw.includes('shortlist')) {
         status = 'shortlisted';
-      } else if (totalScore !== undefined || appStatusRaw.includes('review') || appStatusRaw.includes('completed')) {
+      } else if (
+        totalScore !== undefined ||
+        appStatusRaw.includes('review') ||
+        appStatusRaw.includes('completed') ||
+        appStatusRaw.includes('done') ||
+        appStatusRaw.includes('eval')
+      ) {
         status = 'scoring_review';
+      } else {
+        status = 'submitted';
       }
 
       // Collect documents

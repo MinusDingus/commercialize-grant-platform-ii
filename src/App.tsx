@@ -46,13 +46,23 @@ export default function App() {
   };
 
   const reloadData = () => {
-    setApplications(GrantStore.getApplications());
+    const apps = GrantStore.getApplications();
+    setApplications(apps);
     setNotifications(GrantStore.getNotifications());
     setBaselineThreshold(GrantStore.getBaselineThreshold());
+    return apps;
   };
 
   useEffect(() => {
+    // 1. Initial sync read
     reloadData();
+
+    // 2. Hydrate from high-capacity IndexedDB (for large 200+ datasets)
+    GrantStore.init().then((apps) => {
+      if (apps && apps.length > 0) {
+        setApplications(apps);
+      }
+    });
   }, []);
 
   const handleCreateApplication = (appData: any) => {
@@ -339,6 +349,10 @@ export default function App() {
             onImportSuccess={(count) => {
               reloadData();
               showToast(`Imported ${count} application(s) from spreadsheet into platform!`);
+            }}
+            onNavigateToCrm={() => {
+              reloadData();
+              setActiveTab('crm');
             }}
           />
         )}

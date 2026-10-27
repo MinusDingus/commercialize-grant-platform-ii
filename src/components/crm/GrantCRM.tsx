@@ -117,6 +117,8 @@ export const GrantCRM: React.FC<GrantCRMProps> = ({
   const [copiedForm2Link, setCopiedForm2Link] = useState(false);
   const [dossierTab, setDossierTab] = useState<'overview' | 'form1' | 'scoring' | 'form2' | 'documents' | 'raw'>('overview');
   const [scoringViewMode, setScoringViewMode] = useState<'cards' | 'comparison'>('cards');
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(25);
 
   const handleSimulateApplicantForm2 = (app: GrantApplication) => {
     const payload = {
@@ -144,6 +146,15 @@ export const GrantCRM: React.FC<GrantCRMProps> = ({
     }
   };
 
+  // Dynamically extract sectors from applications
+  const availableSectors = useMemo(() => {
+    const set = new Set<string>();
+    applications.forEach((a) => {
+      if (a.company?.sector) set.add(a.company.sector);
+    });
+    return Array.from(set);
+  }, [applications]);
+
   // Filtered applications
   const filteredApps = useMemo(() => {
     return applications.filter((app) => {
@@ -158,6 +169,13 @@ export const GrantCRM: React.FC<GrantCRMProps> = ({
       return matchSearch && matchSector;
     });
   }, [applications, searchQuery, filterSector]);
+
+  // Total pages calculation for Table view
+  const totalPages = Math.max(1, Math.ceil(filteredApps.length / pageSize));
+  const paginatedApps = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredApps.slice(start, start + pageSize);
+  }, [filteredApps, currentPage, pageSize]);
 
   return (
     <div className="space-y-6">
@@ -177,16 +195,18 @@ export const GrantCRM: React.FC<GrantCRMProps> = ({
 
           <select
             value={filterSector}
-            onChange={(e) => setFilterSector(e.target.value)}
+            onChange={(e) => {
+              setFilterSector(e.target.value);
+              setCurrentPage(1);
+            }}
             className="text-xs border border-slate-200 rounded-md px-3 py-2 bg-slate-50 font-medium text-slate-800"
           >
             <option value="all">All Sectors ({applications.length})</option>
-            <option value="AgriTech & Food Security">AgriTech & Food Security</option>
-            <option value="Deep Tech & AI">Deep Tech & AI</option>
-            <option value="Clean Energy & Mobility">Clean Energy & Mobility</option>
-            <option value="Digital Health & Biotech">Digital Health & Biotech</option>
-            <option value="Smart Manufacturing & IoT">Smart Manufacturing & IoT</option>
-            <option value="Creative Multimedia & FinTech">Creative Multimedia & FinTech</option>
+            {availableSectors.map((sec) => (
+              <option key={sec} value={sec}>
+                {sec}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -230,7 +250,7 @@ export const GrantCRM: React.FC<GrantCRMProps> = ({
               viewMode === 'table' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600'
             }`}
           >
-            Dense Table
+            Dense Table ({filteredApps.length})
           </button>
         </div>
       </div>
@@ -240,7 +260,13 @@ export const GrantCRM: React.FC<GrantCRMProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4 overflow-x-auto pb-4">
           {PIPELINE_STAGES.map((col) => {
             const colApps = filteredApps.filter((a) => {
-              if (col.key === 'submitted') return a.status === 'submitted' || a.status === 'screening';
+              if (col.key === 'submitted') {
+                return (
+                  a.status === 'submitted' ||
+                  a.status === 'screening' ||
+                  !['scoring_review', 'shortlisted', 'analyst_due_diligence', 'awarded'].includes(a.status)
+                );
+              }
               if (col.key === 'scoring_review') return a.status === 'scoring_review';
               if (col.key === 'shortlisted') return a.status === 'shortlisted';
               if (col.key === 'analyst_due_diligence') return a.status === 'analyst_due_diligence';
@@ -367,7 +393,7 @@ export const GrantCRM: React.FC<GrantCRMProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-800">
-                {filteredApps.map((app) => (
+                {paginatedApps.map((app) => (
                   <tr key={app.id} className="hover:bg-slate-50 transition-colors">
                     <td className="p-3">
                       <button
@@ -432,6 +458,56 @@ export const GrantCRM: React.FC<GrantCRMProps> = ({
                 ))}
               </tbody>
             </table>
+          </div>
+
+          {/* Table Pagination Bar */}
+          <div className="bg-slate-50 border-t border-slate-200 px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">
+            <div className="flex items-center gap-2">
+              <span>
+                Showing <strong>{filteredApps.length === 0 ? 0 : (currentPage - 1) * pageSize + 1}</strong> to{' '}
+                <strong>{Math.min(currentPage * pageSize, filteredApps.length)}</strong> of{' '}
+                <strong>{filteredApps.length}</strong> applications
+              </span>
+              <span className="text-slate-300">|</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] text-slate-500">Rows per page:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="bg-white border border-slate-200 rounded px-2 py-0.5 text-xs font-semibold"
+                >
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                  <option value={500}>All (500)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={currentPage <= 1}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                className="px-2.5 py-1 bg-white border border-slate-200 rounded text-xs font-semibold text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 transition-colors"
+              >
+                Previous
+              </button>
+              <span className="font-semibold text-slate-800">
+                Page {currentPage} of {totalPages}
+              </span>
+              <button
+                type="button"
+                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                className="px-2.5 py-1 bg-white border border-slate-200 rounded text-xs font-semibold text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 transition-colors"
+              >
+                Next
+              </button>
+            </div>
           </div>
         </div>
       )}

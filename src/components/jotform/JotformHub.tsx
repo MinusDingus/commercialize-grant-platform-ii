@@ -19,6 +19,7 @@ interface JotformHubProps {
   onProcessWebhook: (payload: any) => GrantApplication;
   onViewApplication: (app: GrantApplication) => void;
   onImportSuccess?: (count: number) => void;
+  onNavigateToCrm?: () => void;
 }
 
 const FORM_1_INTAKE_PAYLOAD = {
@@ -66,6 +67,7 @@ export const JotformHub: React.FC<JotformHubProps> = ({
   onProcessWebhook,
   onViewApplication,
   onImportSuccess,
+  onNavigateToCrm,
 }) => {
   const [hubMode, setHubMode] = useState<'sheet' | 'webhook'>('sheet');
   const [activeFormPreset, setActiveFormPreset] = useState<'form1' | 'form2'>('form1');
@@ -141,6 +143,7 @@ export const JotformHub: React.FC<JotformHubProps> = ({
             if (onImportSuccess) onImportSuccess(count);
           }}
           onViewApplication={onViewApplication}
+          onNavigateToCrm={onNavigateToCrm}
         />
       ) : (
         <div className="space-y-6">

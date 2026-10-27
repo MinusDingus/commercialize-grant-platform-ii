@@ -14,6 +14,12 @@ import {
 } from '../data/mockData';
 import { calculateWeightedScore, calculateCompositeScore } from './rubricMath';
 
+import {
+  saveApplicationsToIndexedDb,
+  loadApplicationsFromIndexedDb,
+  clearApplicationsIndexedDb,
+} from './indexedDb';
+
 const STORAGE_KEYS = {
   APPLICATIONS: 'crg_grant_applications_v1',
   NOTIFICATIONS: 'crg_grant_notifications_v1',
@@ -23,7 +29,44 @@ const STORAGE_KEYS = {
 const DEFAULT_BASELINE = 75.0;
 
 export class GrantStore {
+  // In-memory cache ensures 0ms instant access and bypasses localStorage 5MB quota
+  private static memoryApplications: GrantApplication[] | null = null;
+  private static isInitialized = false;
+
+  /**
+   * Initializes store by loading from IndexedDB (asynchronous high-capacity storage)
+   * Falls back to localStorage and initial seed applications.
+   */
+  static async init(): Promise<GrantApplication[]> {
+    if (this.isInitialized && this.memoryApplications && this.memoryApplications.length > 0) {
+      return this.memoryApplications;
+    }
+
+    try {
+      const idbApps = await loadApplicationsFromIndexedDb();
+      if (idbApps && Array.isArray(idbApps) && idbApps.length > 0) {
+        this.memoryApplications = idbApps;
+        this.isInitialized = true;
+        // Also ensure lightweight backup in localStorage
+        this.saveToLocalStorageSafe(idbApps);
+        return idbApps;
+      }
+    } catch (e) {
+      console.warn('IndexedDB hydration notice:', e);
+    }
+
+    const apps = this.getApplications();
+    this.isInitialized = true;
+    return apps;
+  }
+
   static getApplications(): GrantApplication[] {
+    // 1. If in-memory cache is populated, return it directly
+    if (this.memoryApplications && this.memoryApplications.length > 0) {
+      return this.memoryApplications;
+    }
+
+    // 2. Try loading from localStorage
     try {
       const data = localStorage.getItem(STORAGE_KEYS.APPLICATIONS);
       if (data) {
@@ -69,6 +112,9 @@ export class GrantStore {
             needsSave = true;
           }
         }
+
+        this.memoryApplications = parsed;
+
         if (needsSave) {
           this.saveApplications(parsed);
         }
@@ -77,15 +123,56 @@ export class GrantStore {
     } catch (e) {
       console.warn('Failed to parse applications from storage, using initial data', e);
     }
+
+    this.memoryApplications = INITIAL_APPLICATIONS;
     this.saveApplications(INITIAL_APPLICATIONS);
     return INITIAL_APPLICATIONS;
   }
 
   static saveApplications(apps: GrantApplication[]) {
+    // 1. Immediately store in memory so React UI has 0-latency access
+    this.memoryApplications = apps;
+
+    // 2. Persist full fidelity to IndexedDB (asynchronously, unlimited quota)
+    saveApplicationsToIndexedDb(apps).catch((err) => {
+      console.warn('Could not persist to IndexedDB:', err);
+    });
+
+    // 3. Persist safely to localStorage with quota protection
+    this.saveToLocalStorageSafe(apps);
+  }
+
+  /**
+   * Saves to localStorage handling QuotaExceededError gracefully
+   */
+  private static saveToLocalStorageSafe(apps: GrantApplication[]) {
     try {
       localStorage.setItem(STORAGE_KEYS.APPLICATIONS, JSON.stringify(apps));
-    } catch (e) {
-      console.error('Failed to save applications to storage', e);
+    } catch (e: any) {
+      console.warn('localStorage quota exceeded for full payload. Compacting backup for localStorage...', e?.message);
+      try {
+        // Strip out redundant raw formData and truncate large narratives for localStorage fallback
+        const compacted = apps.map((app) => {
+          const { formData, ...rest } = app;
+          return {
+            ...rest,
+            technology: {
+              ...rest.technology,
+              productionReadiness: rest.technology.productionReadiness?.slice(0, 300),
+              currentCapacity: rest.technology.currentCapacity?.slice(0, 300),
+            },
+          };
+        });
+        localStorage.setItem(STORAGE_KEYS.APPLICATIONS, JSON.stringify(compacted));
+      } catch (err2) {
+        try {
+          // If still over quota (e.g. 500+ apps), keep top 50 in localStorage
+          const topSlice = apps.slice(0, 50).map(({ formData, ...rest }) => rest);
+          localStorage.setItem(STORAGE_KEYS.APPLICATIONS, JSON.stringify(topSlice));
+        } catch {
+          // In-memory + IndexedDB keep the full dataset intact
+        }
+      }
     }
   }
 
@@ -551,6 +638,8 @@ export class GrantStore {
     localStorage.removeItem(STORAGE_KEYS.APPLICATIONS);
     localStorage.removeItem(STORAGE_KEYS.NOTIFICATIONS);
     localStorage.removeItem(STORAGE_KEYS.BASELINE);
+    clearApplicationsIndexedDb().catch(() => {});
+    this.memoryApplications = INITIAL_APPLICATIONS;
     this.saveApplications(INITIAL_APPLICATIONS);
     this.saveNotifications(INITIAL_NOTIFICATIONS);
     this.setBaselineThreshold(DEFAULT_BASELINE);
