@@ -121,9 +121,12 @@ export const SheetDataImporter: React.FC<SheetDataImporterProps> = ({
     firstApp?: GrantApplication;
   } | null>(null);
 
+  const [importError, setImportError] = useState<string | null>(null);
+
   const handleExecuteImport = async () => {
+    setImportError(null);
     if (parsedApps.length === 0) {
-      alert('Please paste spreadsheet data or upload a CSV file before clicking import.');
+      setImportError('Please paste spreadsheet data or upload a CSV file before clicking import.');
       return;
     }
 
@@ -158,7 +161,7 @@ export const SheetDataImporter: React.FC<SheetDataImporterProps> = ({
         firstApp: parsedApps[0],
       });
     } catch (err: any) {
-      alert(`Import error: ${err.message}`);
+      setImportError(`Import error: ${err.message}`);
     } finally {
       setIsImporting(false);
     }
@@ -230,6 +233,22 @@ export const SheetDataImporter: React.FC<SheetDataImporterProps> = ({
           </label>
         </div>
       </div>
+
+      {/* Error Notification */}
+      {importError && (
+        <div className="bg-rose-50 border border-rose-200 text-rose-900 rounded-xl p-4 flex items-center justify-between gap-3 animate-in fade-in">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+            <span className="text-xs font-semibold">{importError}</span>
+          </div>
+          <button
+            onClick={() => setImportError(null)}
+            className="text-xs text-rose-600 hover:text-rose-900 font-bold px-2 py-1"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Success Notification */}
       {importStatusMsg && (

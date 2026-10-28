@@ -178,12 +178,16 @@ export const EmailCenter: React.FC<EmailCenterProps> = ({
       if (tmpl.role === 'applicant') {
         setCustomRecipient(targetApp.applicant.email);
       } else if (tmpl.role === 'reviewer') {
-        setCustomRecipient('reviewers@evaluators.my');
+        setCustomRecipient('reviewers@mranti.my');
+      } else if (tmpl.role === 'analyst') {
+        setCustomRecipient(targetApp.assignedAnalystEmail || 'reviewer3@mranti.my');
       } else {
         setCustomRecipient('shafiqfauzi@mranti.my');
       }
     }
   };
+
+  const [dispatchStatus, setDispatchStatus] = useState<string | null>(null);
 
   const handleSendEmail = (e: React.FormEvent) => {
     e.preventDefault();
@@ -204,8 +208,8 @@ export const EmailCenter: React.FC<EmailCenterProps> = ({
       templateType: activeTemplate.id,
     });
 
-    // Reset or keep updated
-    alert('Email successfully dispatched to recipient queue.');
+    setDispatchStatus(`Email dispatched successfully to ${recipientToSend}`);
+    setTimeout(() => setDispatchStatus(null), 4000);
   };
 
   const filteredNotifications = notifications.filter((n) => {
@@ -243,6 +247,13 @@ export const EmailCenter: React.FC<EmailCenterProps> = ({
             <Send className="w-4 h-4 text-sky-600" />
             Dispatch Email Notification
           </h3>
+
+          {dispatchStatus && (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg flex items-center gap-2 text-xs font-semibold animate-in fade-in">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{dispatchStatus}</span>
+            </div>
+          )}
 
           <form onSubmit={handleSendEmail} className="space-y-3.5 text-xs">
             <div>

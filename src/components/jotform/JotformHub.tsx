@@ -85,13 +85,16 @@ export const JotformHub: React.FC<JotformHubProps> = ({
     setTimeout(() => setCopiedUrl(false), 2000);
   };
 
+  const [simulatorError, setSimulatorError] = useState<string | null>(null);
+
   const handleRunSimulator = () => {
+    setSimulatorError(null);
     try {
       const parsed = JSON.parse(payloadText);
       const app = onProcessWebhook(parsed);
       setTestResult(app);
     } catch (e: any) {
-      alert(`Invalid JSON format: ${e.message}`);
+      setSimulatorError(`Invalid JSON format: ${e.message}`);
     }
   };
 
@@ -384,6 +387,12 @@ export const JotformHub: React.FC<JotformHubProps> = ({
               className="w-full text-xs font-mono p-3 border border-slate-200 rounded-lg bg-slate-900 text-emerald-400 focus:outline-none focus:ring-1 focus:ring-sky-500 leading-relaxed"
             />
           </div>
+
+          {simulatorError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-lg text-xs font-semibold">
+              {simulatorError}
+            </div>
+          )}
 
           <div className="flex items-center justify-between pt-2 border-t border-slate-200">
             <button

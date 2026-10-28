@@ -62,7 +62,7 @@ export class GrantStore {
 
   static getApplications(): GrantApplication[] {
     // 1. If in-memory cache is populated, return it directly
-    if (this.memoryApplications && this.memoryApplications.length > 0) {
+    if (this.memoryApplications) {
       return this.memoryApplications;
     }
 
@@ -72,46 +72,15 @@ export class GrantStore {
       if (data) {
         const parsed: GrantApplication[] = JSON.parse(data);
         let needsSave = false;
-        const crg101 = parsed.find((a) => a.id === 'CRG-2026-0101');
-        if (crg101 && (!crg101.supplementarySubmissions || crg101.supplementarySubmissions.length === 0)) {
-          const initial101 = INITIAL_APPLICATIONS.find((a) => a.id === 'CRG-2026-0101');
-          if (initial101) {
-            crg101.supplementarySubmissions = initial101.supplementarySubmissions;
-            crg101.formData = initial101.formData;
-            needsSave = true;
-          }
-        }
-        // Ensure criterionRemarks exist on existing reviewer scores
+        
+        // Clean up any old data where Shafiq Fauzi was mistakenly set as analyst
         parsed.forEach((app) => {
-          const initApp = INITIAL_APPLICATIONS.find((i) => i.id === app.id);
-          if (app.reviewer1Score && (!app.reviewer1Score.criterionRemarks || Object.keys(app.reviewer1Score.criterionRemarks).length === 0)) {
-            if (initApp?.reviewer1Score?.criterionRemarks) {
-              app.reviewer1Score.criterionRemarks = { ...initApp.reviewer1Score.criterionRemarks };
-              needsSave = true;
-            }
-          }
-          if (app.reviewer2Score && (!app.reviewer2Score.criterionRemarks || Object.keys(app.reviewer2Score.criterionRemarks).length === 0)) {
-            if (initApp?.reviewer2Score?.criterionRemarks) {
-              app.reviewer2Score.criterionRemarks = { ...initApp.reviewer2Score.criterionRemarks };
-              needsSave = true;
-            }
-          }
-        });
-        // Ensure analyst name is Shafiq Fauzi
-        parsed.forEach((app) => {
-          if (app.assignedAnalystId === 'ana-01' || app.assignedAnalystName?.includes('Nurul Huda')) {
-            app.assignedAnalystName = 'Shafiq Fauzi';
+          if (app.assignedAnalystName?.includes('Shafiq Fauzi')) {
+            app.assignedAnalystName = 'Reviewer 3 / Diligence Analyst';
+            app.assignedAnalystId = 'ana-01';
             needsSave = true;
           }
         });
-        // Ensure DPF000230 (AIHQ SDN BHD) is present
-        if (!parsed.some((a) => a.id === 'DPF000230')) {
-          const dpf230 = INITIAL_APPLICATIONS.find((a) => a.id === 'DPF000230');
-          if (dpf230) {
-            parsed.unshift(dpf230);
-            needsSave = true;
-          }
-        }
 
         this.memoryApplications = parsed;
 
@@ -121,12 +90,11 @@ export class GrantStore {
         return parsed;
       }
     } catch (e) {
-      console.warn('Failed to parse applications from storage, using initial data', e);
+      console.warn('Failed to parse applications from storage, using empty state', e);
     }
 
-    this.memoryApplications = INITIAL_APPLICATIONS;
-    this.saveApplications(INITIAL_APPLICATIONS);
-    return INITIAL_APPLICATIONS;
+    this.memoryApplications = [];
+    return [];
   }
 
   static saveApplications(apps: GrantApplication[]) {

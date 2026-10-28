@@ -161,6 +161,7 @@ export interface GrantApplication {
   baselinePassed?: boolean;
   assignedAnalystId?: string;
   assignedAnalystName?: string;
+  assignedAnalystEmail?: string;
   analystNotes?: string;
   committeeDecision?: {
     decision: 'approved' | 'conditional' | 'rejected';

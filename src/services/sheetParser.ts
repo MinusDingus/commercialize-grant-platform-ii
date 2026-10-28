@@ -254,6 +254,11 @@ export function parseSheetData(rawText: string, baselineThreshold = 75.0): {
       // Reviewers & Scores
       const reviewer1 = getCol(row, 'Reviewer 1') || 'rossuriana@mranti.my';
       const reviewer2 = getCol(row, 'Reviewer 2') || 'maisarah@mranti.my';
+      const reviewer3 =
+        getCol(row, 'Reviewer 3') ||
+        getCol(row, 'Analyst') ||
+        getCol(row, 'Assigned Analyst') ||
+        getCol(row, 'Lead Analyst');
       const rawTotalScore = getCol(row, 'Total Score');
       const totalScore = rawTotalScore ? parseFloat(rawTotalScore) : undefined;
       const baselinePassed = totalScore !== undefined ? totalScore >= baselineThreshold : false;
@@ -424,11 +429,11 @@ export function parseSheetData(rawText: string, baselineThreshold = 75.0): {
         reviewer2Score,
         compositeScore: totalScore,
         baselinePassed,
-        assignedAnalystId: 'ana-01',
-        assignedAnalystName: 'Shafiq Fauzi',
+        assignedAnalystId: reviewer3 ? 'ana-01' : (baselinePassed ? 'ana-01' : undefined),
+        assignedAnalystName: reviewer3 || (baselinePassed ? 'Reviewer 3 / Diligence Analyst' : undefined),
         analystNotes: baselinePassed
-          ? 'Passed baseline evaluation. Ready for site visit and verification.'
-          : `Composite score: ${totalScore}%. Review completed.`,
+          ? 'Passed baseline evaluation. Ready for Reviewer 3 / Analyst site visit and verification.'
+          : (totalScore !== undefined ? `Composite score: ${totalScore}%. Review completed.` : 'Intake registered, pending review.'),
         formData,
         createdAt: getCol(row, 'Submission Date') || new Date().toISOString(),
         updatedAt: getCol(row, 'Last Update Date') || new Date().toISOString(),
@@ -481,7 +486,7 @@ export function generateSqlInserts(apps: GrantApplication[]): string {
     // Insert application
     statements.push(
       `INSERT INTO applications (id, submission_source, jotform_submission_id, status, applicant_name, applicant_designation, applicant_email, applicant_phone, identification_no, product_name, tagline, trl_level, product_description, ip_status, production_readiness, current_capacity, target_market, tam_sam_som, funding_requested, revenue_model, export_potential, assigned_reviewer_1_id, assigned_reviewer_2_id, composite_score, baseline_passed, assigned_analyst_id, assigned_analyst_name, analyst_notes) ` +
-      `VALUES (${escapeSql(app.id)}, 'jotform_webhook', ${escapeSql(app.jotformSubmissionId)}, ${escapeSql(app.status)}, ${escapeSql(a.fullName)}, ${escapeSql(a.designation)}, ${escapeSql(a.email)}, ${escapeSql(a.phone)}, ${escapeSql(a.identificationNo)}, ${escapeSql(t.productName, 200)}, ${escapeSql(t.tagline, 150)}, ${t.trlLevel}, ${escapeSql(t.productDescription, 400)}, ${escapeSql(t.ipStatus)}, ${escapeSql(t.productionReadiness, 250)}, ${escapeSql(t.currentCapacity, 250)}, ${escapeSql(m.targetMarket, 200)}, ${escapeSql(m.tamSamSom, 200)}, ${m.fundingRequested}, ${escapeSql(m.revenueModel, 200)}, ${m.exportPotential ? 'TRUE' : 'FALSE'}, 'rev-05', 'rev-06', ${app.compositeScore ?? 'NULL'}, ${app.baselinePassed ? 'TRUE' : 'FALSE'}, 'ana-01', 'Shafiq Fauzi', ${escapeSql(app.analystNotes, 250)}) ` +
+      `VALUES (${escapeSql(app.id)}, 'jotform_webhook', ${escapeSql(app.jotformSubmissionId)}, ${escapeSql(app.status)}, ${escapeSql(a.fullName)}, ${escapeSql(a.designation)}, ${escapeSql(a.email)}, ${escapeSql(a.phone)}, ${escapeSql(a.identificationNo)}, ${escapeSql(t.productName, 200)}, ${escapeSql(t.tagline, 150)}, ${t.trlLevel}, ${escapeSql(t.productDescription, 400)}, ${escapeSql(t.ipStatus)}, ${escapeSql(t.productionReadiness, 250)}, ${escapeSql(t.currentCapacity, 250)}, ${escapeSql(m.targetMarket, 200)}, ${escapeSql(m.tamSamSom, 200)}, ${m.fundingRequested}, ${escapeSql(m.revenueModel, 200)}, ${m.exportPotential ? 'TRUE' : 'FALSE'}, 'rev-05', 'rev-06', ${app.compositeScore ?? 'NULL'}, ${app.baselinePassed ? 'TRUE' : 'FALSE'}, ${escapeSql(app.assignedAnalystId || 'ana-01')}, ${escapeSql(app.assignedAnalystName || 'Reviewer 3 / Diligence Analyst')}, ${escapeSql(app.analystNotes, 250)}) ` +
       `ON CONFLICT (id) DO UPDATE SET composite_score = EXCLUDED.composite_score, status = EXCLUDED.status;`
     );
     statements.push('');
