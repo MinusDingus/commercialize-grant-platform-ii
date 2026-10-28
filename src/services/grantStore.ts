@@ -28,6 +28,19 @@ const STORAGE_KEYS = {
 
 const DEFAULT_BASELINE = 75.0;
 
+/**
+ * Validates that an application ID belongs to the commercialize grant (DPF / DF)
+ * and purges legacy mock IDs like CRG-2026-0104.
+ */
+export function isValidDpfApplicationId(id?: string): boolean {
+  if (!id) return false;
+  const upper = id.trim().toUpperCase();
+  // Reject mock IDs
+  if (upper.startsWith('CRG')) return false;
+  // Accept Dana Pengkomersialan Fasilitasi IDs: DPF, DF, or non-mock IDs
+  return upper.startsWith('DPF') || upper.startsWith('DF') || upper.startsWith('D');
+}
+
 export class GrantStore {
   // In-memory cache ensures 0ms instant access and bypasses localStorage 5MB quota
   private static memoryApplications: GrantApplication[] | null = null;
@@ -39,17 +52,18 @@ export class GrantStore {
    */
   static async init(): Promise<GrantApplication[]> {
     if (this.isInitialized && this.memoryApplications && this.memoryApplications.length > 0) {
-      return this.memoryApplications;
+      return this.memoryApplications.filter((a) => isValidDpfApplicationId(a.id));
     }
 
     try {
       const idbApps = await loadApplicationsFromIndexedDb();
       if (idbApps && Array.isArray(idbApps) && idbApps.length > 0) {
-        this.memoryApplications = idbApps;
+        // Enforce that only valid DPF / DF IDs are preserved; purge mock CRG- IDs
+        const validApps = idbApps.filter((a) => isValidDpfApplicationId(a.id));
+        this.memoryApplications = validApps;
         this.isInitialized = true;
-        // Also ensure lightweight backup in localStorage
-        this.saveToLocalStorageSafe(idbApps);
-        return idbApps;
+        this.saveApplications(validApps);
+        return validApps;
       }
     } catch (e) {
       console.warn('IndexedDB hydration notice:', e);
@@ -61,33 +75,38 @@ export class GrantStore {
   }
 
   static getApplications(): GrantApplication[] {
-    // 1. If in-memory cache is populated, return it directly
+    // 1. If in-memory cache is populated, return it directly filtered
     if (this.memoryApplications) {
-      return this.memoryApplications;
+      return this.memoryApplications.filter((a) => isValidDpfApplicationId(a.id));
     }
 
     // 2. Try loading from localStorage
     try {
-      const data = localStorage.getItem(STORAGE_KEYS.APPLICATIONS);
-      if (data) {
-        const parsed: GrantApplication[] = JSON.parse(data);
-        let needsSave = false;
-        
-        // Clean up any old data where Shafiq Fauzi was mistakenly set as analyst
-        parsed.forEach((app) => {
-          if (app.assignedAnalystName?.includes('Shafiq Fauzi')) {
-            app.assignedAnalystName = 'Reviewer 3 / Diligence Analyst';
-            app.assignedAnalystId = 'ana-01';
-            needsSave = true;
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const data = localStorage.getItem(STORAGE_KEYS.APPLICATIONS);
+        if (data) {
+          let parsed: GrantApplication[] = JSON.parse(data);
+          const originalLen = parsed.length;
+          // Purge mock IDs like CRG-2026-0104; only preserve valid DPF / DF IDs
+          parsed = parsed.filter((a) => isValidDpfApplicationId(a.id));
+          let needsSave = parsed.length !== originalLen;
+          
+          // Clean up any old data where Shafiq Fauzi was mistakenly set as analyst
+          parsed.forEach((app) => {
+            if (app.assignedAnalystName?.includes('Shafiq Fauzi')) {
+              app.assignedAnalystName = 'Reviewer 3 / Diligence Analyst';
+              app.assignedAnalystId = 'ana-01';
+              needsSave = true;
+            }
+          });
+
+          this.memoryApplications = parsed;
+
+          if (needsSave) {
+            this.saveApplications(parsed);
           }
-        });
-
-        this.memoryApplications = parsed;
-
-        if (needsSave) {
-          this.saveApplications(parsed);
+          return parsed;
         }
-        return parsed;
       }
     } catch (e) {
       console.warn('Failed to parse applications from storage, using empty state', e);
@@ -98,16 +117,19 @@ export class GrantStore {
   }
 
   static saveApplications(apps: GrantApplication[]) {
+    // Enforce that only valid DPF/DF IDs are accepted
+    const validApps = apps.filter((a) => isValidDpfApplicationId(a.id));
+
     // 1. Immediately store in memory so React UI has 0-latency access
-    this.memoryApplications = apps;
+    this.memoryApplications = validApps;
 
     // 2. Persist full fidelity to IndexedDB (asynchronously, unlimited quota)
-    saveApplicationsToIndexedDb(apps).catch((err) => {
+    saveApplicationsToIndexedDb(validApps).catch((err) => {
       console.warn('Could not persist to IndexedDB:', err);
     });
 
     // 3. Persist safely to localStorage with quota protection
-    this.saveToLocalStorageSafe(apps);
+    this.saveToLocalStorageSafe(validApps);
   }
 
   /**
@@ -115,7 +137,9 @@ export class GrantStore {
    */
   private static saveToLocalStorageSafe(apps: GrantApplication[]) {
     try {
-      localStorage.setItem(STORAGE_KEYS.APPLICATIONS, JSON.stringify(apps));
+      if (typeof window !== 'undefined' && window.localStorage) {
+        localStorage.setItem(STORAGE_KEYS.APPLICATIONS, JSON.stringify(apps));
+      }
     } catch (e: any) {
       console.warn('localStorage quota exceeded for full payload. Compacting backup for localStorage...', e?.message);
       try {
@@ -126,17 +150,21 @@ export class GrantStore {
             ...rest,
             technology: {
               ...rest.technology,
-              productionReadiness: rest.technology.productionReadiness?.slice(0, 300),
-              currentCapacity: rest.technology.currentCapacity?.slice(0, 300),
+              productionReadiness: rest.technology?.productionReadiness?.slice(0, 300),
+              currentCapacity: rest.technology?.currentCapacity?.slice(0, 300),
             },
           };
         });
-        localStorage.setItem(STORAGE_KEYS.APPLICATIONS, JSON.stringify(compacted));
+        if (typeof window !== 'undefined' && window.localStorage) {
+          localStorage.setItem(STORAGE_KEYS.APPLICATIONS, JSON.stringify(compacted));
+        }
       } catch (err2) {
         try {
           // If still over quota (e.g. 500+ apps), keep top 50 in localStorage
           const topSlice = apps.slice(0, 50).map(({ formData, ...rest }) => rest);
-          localStorage.setItem(STORAGE_KEYS.APPLICATIONS, JSON.stringify(topSlice));
+          if (typeof window !== 'undefined' && window.localStorage) {
+            localStorage.setItem(STORAGE_KEYS.APPLICATIONS, JSON.stringify(topSlice));
+          }
         } catch {
           // In-memory + IndexedDB keep the full dataset intact
         }
@@ -146,8 +174,10 @@ export class GrantStore {
 
   static getBaselineThreshold(): number {
     try {
-      const val = localStorage.getItem(STORAGE_KEYS.BASELINE);
-      if (val) return parseFloat(val);
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const val = localStorage.getItem(STORAGE_KEYS.BASELINE);
+        if (val) return parseFloat(val);
+      }
     } catch {
       // ignore
     }
@@ -155,37 +185,40 @@ export class GrantStore {
   }
 
   static setBaselineThreshold(val: number): void {
-    localStorage.setItem(STORAGE_KEYS.BASELINE, val.toString());
+    if (typeof window !== 'undefined' && window.localStorage) {
+      localStorage.setItem(STORAGE_KEYS.BASELINE, val.toString());
+    }
   }
 
   static getNotifications(): EmailNotification[] {
     try {
-      const data = localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS);
-      if (data) {
-        const parsed: EmailNotification[] = JSON.parse(data);
-        let needsSave = false;
-        parsed.forEach((n) => {
-          if (n.recipientEmail === 'nurul.huda@mranti.my' || n.recipientEmail === 'analyst@mranti.my') {
-            n.recipientEmail = 'shafiqfauzi@mranti.my';
-            n.recipientName = 'Shafiq Fauzi';
-            needsSave = true;
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const data = localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS);
+        if (data) {
+          let parsed: EmailNotification[] = JSON.parse(data);
+          const originalLen = parsed.length;
+          // Purge notifications referencing old mock CRG- IDs
+          parsed = parsed.filter(n => !n.applicationId || isValidDpfApplicationId(n.applicationId));
+          let needsSave = parsed.length !== originalLen;
+          if (needsSave) {
+            this.saveNotifications(parsed);
           }
-        });
-        if (needsSave) {
-          this.saveNotifications(parsed);
+          return parsed;
         }
-        return parsed;
       }
     } catch (e) {
       console.warn('Failed to parse notifications, using defaults', e);
     }
-    this.saveNotifications(INITIAL_NOTIFICATIONS);
-    return INITIAL_NOTIFICATIONS;
+    const cleanInitial = INITIAL_NOTIFICATIONS.filter(n => !n.applicationId || isValidDpfApplicationId(n.applicationId));
+    this.saveNotifications(cleanInitial);
+    return cleanInitial;
   }
 
   static saveNotifications(notifications: EmailNotification[]) {
     try {
-      localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(notifications));
+      if (typeof window !== 'undefined' && window.localStorage) {
+        localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(notifications));
+      }
     } catch (e) {
       console.error('Failed to save notifications', e);
     }
@@ -204,15 +237,29 @@ export class GrantStore {
     return newEmail;
   }
 
-  static importApplications(newApps: GrantApplication[]): { added: number; updated: number } {
+  static importApplications(newApps: GrantApplication[]): { added: number; updated: number; total: number } {
     const existing = this.getApplications();
     let added = 0;
     let updated = 0;
 
     const map = new Map<string, GrantApplication>();
-    existing.forEach((a) => map.set(a.id, a));
+    existing.forEach((a) => {
+      if (isValidDpfApplicationId(a.id)) {
+        map.set(a.id, a);
+      }
+    });
 
-    newApps.forEach((app) => {
+    newApps.forEach((app, idx) => {
+      // Ensure application ID starts with DPF or DF
+      if (!isValidDpfApplicationId(app.id)) {
+        const numPart = (app.id || '').replace(/\D/g, '');
+        if (numPart.length >= 3) {
+          app.id = `DPF${numPart.slice(-6).padStart(6, '0')}`;
+        } else {
+          app.id = `DPF${String(230 + existing.length + idx + 1).padStart(6, '0')}`;
+        }
+      }
+
       if (map.has(app.id)) {
         map.set(app.id, { ...map.get(app.id)!, ...app, updatedAt: new Date().toISOString() });
         updated++;
@@ -224,15 +271,15 @@ export class GrantStore {
 
     const combined = Array.from(map.values());
     this.saveApplications(combined);
-    return { added, updated };
+    return { added, updated, total: combined.length };
   }
 
   static createApplication(
     appData: Omit<GrantApplication, 'id' | 'createdAt' | 'updatedAt' | 'assignedReviewers'>
   ): GrantApplication {
     const apps = this.getApplications();
-    const nextNum = 100 + apps.length + 1;
-    const newId = `CRG-2026-0${nextNum}`;
+    const nextNum = 230 + apps.length + 1;
+    const newId = `DPF${String(nextNum).padStart(6, '0')}`;
     const assignedReviewers: [string, string] = ['rev-01', 'rev-02'];
 
     const newApp: GrantApplication = {

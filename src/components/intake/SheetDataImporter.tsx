@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { GrantApplication } from '../../types/grant';
 import { parseSheetData, generateSqlInserts } from '../../services/sheetParser';
 import { GrantStore } from '../../services/grantStore';
@@ -38,8 +38,8 @@ export const SheetDataImporter: React.FC<SheetDataImporterProps> = ({
   const [parsedApps, setParsedApps] = useState<GrantApplication[]>([]);
   const [parseErrors, setParseErrors] = useState<string[]>([]);
   const [isCopiedSql, setIsCopiedSql] = useState(false);
-  const [sqlStatements, setSqlStatements] = useState('');
   const [showSqlModal, setShowSqlModal] = useState(false);
+  const [selectedSqlBatch, setSelectedSqlBatch] = useState<number | 'all'>('all');
   const [importStatusMsg, setImportStatusMsg] = useState<string | null>(null);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -48,21 +48,26 @@ export const SheetDataImporter: React.FC<SheetDataImporterProps> = ({
     if (!textToParse.trim()) {
       setParsedApps([]);
       setParseErrors([]);
-      setSqlStatements('');
       return;
     }
 
     const res = parseSheetData(textToParse);
     setParsedApps(res.applications);
     setParseErrors(res.errors);
-
-    if (res.applications.length > 0) {
-      const sql = generateSqlInserts(res.applications);
-      setSqlStatements(sql);
-    } else {
-      setSqlStatements('');
-    }
   };
+
+  // Generate SQL either for the entire dataset or in bite-sized batches of 50 to avoid Supabase query size limits
+  const currentSql = useMemo(() => {
+    if (parsedApps.length === 0) return '';
+    if (selectedSqlBatch === 'all') {
+      return generateSqlInserts(parsedApps);
+    }
+    const start = selectedSqlBatch * 50;
+    const batchSlice = parsedApps.slice(start, start + 50);
+    return generateSqlInserts(batchSlice);
+  }, [parsedApps, selectedSqlBatch]);
+
+  const totalSqlBatches = Math.max(1, Math.ceil(parsedApps.length / 50));
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
@@ -116,6 +121,7 @@ export const SheetDataImporter: React.FC<SheetDataImporterProps> = ({
   const [importModalData, setImportModalData] = useState<{
     added: number;
     updated: number;
+    total: number;
     supabaseSynced: boolean;
     supabaseMessage: string;
     firstApp?: GrantApplication;
@@ -149,13 +155,14 @@ export const SheetDataImporter: React.FC<SheetDataImporterProps> = ({
         }
       }
 
-      // 3. Notify parent component to reload state
-      onImportSuccess(parsedApps.length);
+      // 3. Notify parent component to reload state immediately
+      onImportSuccess(res.total || parsedApps.length);
 
       // 4. Open success modal
       setImportModalData({
         added: res.added,
         updated: res.updated,
+        total: res.total || parsedApps.length,
         supabaseSynced,
         supabaseMessage,
         firstApp: parsedApps[0],
@@ -168,18 +175,20 @@ export const SheetDataImporter: React.FC<SheetDataImporterProps> = ({
   };
 
   const handleDownloadSqlFile = () => {
-    if (!sqlStatements) return;
-    const blob = new Blob([sqlStatements], { type: 'text/sql' });
+    if (!currentSql) return;
+    const blob = new Blob([currentSql], { type: 'text/sql' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `DPF_Supabase_Import_${Date.now()}.sql`;
+    const suffix = selectedSqlBatch === 'all' ? 'All' : `Batch_${Number(selectedSqlBatch) + 1}`;
+    a.download = `DPF_Supabase_Import_${suffix}_${Date.now()}.sql`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
   const handleCopySql = () => {
-    navigator.clipboard.writeText(sqlStatements);
+    if (!currentSql) return;
+    navigator.clipboard.writeText(currentSql);
     setIsCopiedSql(true);
     setTimeout(() => setIsCopiedSql(false), 2500);
   };
@@ -580,15 +589,15 @@ export const SheetDataImporter: React.FC<SheetDataImporterProps> = ({
 
             <div className="text-center space-y-1">
               <h3 className="text-base font-bold text-slate-900">Successfully Ingested to Database!</h3>
-              <p className="text-xs text-slate-500">
-                {importModalData.added} application(s) added, {importModalData.updated} updated.
+              <p className="text-xs text-slate-600 font-medium">
+                <strong>{importModalData.total}</strong> application(s) now active in database ({importModalData.added} new, {importModalData.updated} updated).
               </p>
             </div>
 
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs space-y-2">
               <div className="flex items-center gap-2 text-slate-700">
                 <Check className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>Saved to CRM pipeline & memory storage</span>
+                <span>Saved to live CRM pipeline & storage</span>
               </div>
               <div className="flex items-center gap-2 text-slate-700">
                 <Check className={`w-4 h-4 ${importModalData.supabaseSynced ? 'text-emerald-600' : 'text-slate-400'} shrink-0`} />
@@ -614,7 +623,7 @@ export const SheetDataImporter: React.FC<SheetDataImporterProps> = ({
                 }}
                 className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer"
               >
-                <span>Open in Pipeline & CRM Now ({importModalData.added + importModalData.updated} Applications)</span>
+                <span>Open in Pipeline & CRM Now ({importModalData.total} Applications)</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
 
@@ -647,14 +656,16 @@ export const SheetDataImporter: React.FC<SheetDataImporterProps> = ({
       {/* SQL Migration Modal */}
       {showSqlModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-3xl w-full max-h-[85vh] flex flex-col animate-in fade-in zoom-in-95">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-4xl w-full max-h-[85vh] flex flex-col animate-in fade-in zoom-in-95">
             <div className="p-4 border-b border-slate-200 flex items-center justify-between">
               <div>
                 <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
                   <FileCode2 className="w-4 h-4 text-emerald-600" />
-                  PostgreSQL SQL Migration for Supabase
+                  PostgreSQL SQL Generator for Supabase
                 </h3>
-                <p className="text-xs text-slate-500">Compact, single-line SQL queries formatted to prevent query editor size limits</p>
+                <p className="text-xs text-slate-500">
+                  {parsedApps.length} application(s) parsed • Sanitized single-line SQL ready for database execution
+                </p>
               </div>
               <button
                 type="button"
@@ -666,18 +677,71 @@ export const SheetDataImporter: React.FC<SheetDataImporterProps> = ({
             </div>
 
             <div className="p-4 flex-1 overflow-y-auto space-y-3">
-              <div className="p-3 bg-sky-50 border border-sky-200 rounded-lg text-sky-900 text-[11px] leading-relaxed">
-                <strong>💡 Tip:</strong> You do NOT need to run this SQL manually if your Supabase is connected in the top header — clicking <em>"Import to Live Platform"</em> will sync directly to Supabase via its API! If you prefer running SQL manually in Supabase SQL Editor, download the .sql file or copy below.
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-950 text-[11px] leading-relaxed space-y-1">
+                <div className="font-bold flex items-center gap-1.5 text-emerald-800">
+                  <Sparkles className="w-4 h-4" />
+                  Zero-Code Ingestion Recommended:
+                </div>
+                <p>
+                  You do <strong>not</strong> need to run this SQL in Supabase query editor! Simply close this modal and click the green <strong>"Import {parsedApps.length} Application(s) to Live Platform"</strong> button on the intake screen. That loads all applications straight into your active platform pipeline and syncs them automatically without SQL query limits.
+                </p>
               </div>
 
-              <pre className="text-xs font-mono bg-slate-900 text-slate-100 p-4 rounded-lg overflow-x-auto whitespace-pre">
-                {sqlStatements}
+              {/* Batch Selector if multiple batches exist */}
+              {totalSqlBatches > 1 && (
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-700">
+                      Query Editor Size Safeguard — Select Batch:
+                    </span>
+                    <span className="text-[10px] text-slate-500">
+                      Supabase Web Query Editor limits huge queries. Run batch-by-batch:
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSqlBatch('all')}
+                      className={`px-2.5 py-1 text-xs font-semibold rounded-md border transition-colors ${
+                        selectedSqlBatch === 'all'
+                          ? 'bg-slate-900 text-white border-slate-900'
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                      }`}
+                    >
+                      All ({parsedApps.length})
+                    </button>
+                    {Array.from({ length: totalSqlBatches }).map((_, bIdx) => {
+                      const start = bIdx * 50 + 1;
+                      const end = Math.min((bIdx + 1) * 50, parsedApps.length);
+                      return (
+                        <button
+                          key={bIdx}
+                          type="button"
+                          onClick={() => setSelectedSqlBatch(bIdx)}
+                          className={`px-2.5 py-1 text-xs font-semibold rounded-md border transition-colors ${
+                            selectedSqlBatch === bIdx
+                              ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                              : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                          }`}
+                        >
+                          Batch {bIdx + 1} ({start}–{end})
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <pre className="text-xs font-mono bg-slate-900 text-slate-100 p-4 rounded-lg overflow-x-auto whitespace-pre max-h-[350px]">
+                {currentSql}
               </pre>
             </div>
 
             <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
               <span className="text-xs text-slate-500">
-                Single-line sanitized statements
+                {selectedSqlBatch === 'all'
+                  ? `Showing all ${parsedApps.length} application(s)`
+                  : `Showing Batch ${Number(selectedSqlBatch) + 1} (50 applications)`}
               </span>
               <div className="flex items-center gap-2">
                 <button
@@ -694,7 +758,7 @@ export const SheetDataImporter: React.FC<SheetDataImporterProps> = ({
                   className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-2xs"
                 >
                   {isCopiedSql ? <Check className="w-3.5 h-3.5 text-white" /> : <Copy className="w-3.5 h-3.5 text-white" />}
-                  {isCopiedSql ? 'Copied!' : 'Copy SQL Statements'}
+                  {isCopiedSql ? 'Copied!' : selectedSqlBatch === 'all' ? 'Copy All SQL' : `Copy Batch ${Number(selectedSqlBatch) + 1}`}
                 </button>
                 <button
                   type="button"

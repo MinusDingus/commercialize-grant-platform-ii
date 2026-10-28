@@ -110,11 +110,11 @@ export interface DocumentAttachment {
 }
 
 export interface RubricCriteriaScores {
-  marketPotential: number;     // 1-10 (Weight 25%)
-  techFeasibility: number;     // 1-10 (Weight 25%)
-  teamCapability: number;      // 1-10 (Weight 20%)
-  financialSoundness: number;  // 1-10 (Weight 20%)
-  ecosystemImpact: number;     // 1-10 (Weight 10%)
+  marketPotential: number;     // 1-5 (Weight 25%)
+  techFeasibility: number;     // 1-5 (Weight 25%)
+  teamCapability: number;      // 1-5 (Weight 20%)
+  financialSoundness: number;  // 1-5 (Weight 20%)
+  ecosystemImpact: number;     // 1-5 (Weight 10%)
 }
 
 export interface ReviewerScore {

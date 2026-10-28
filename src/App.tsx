@@ -334,7 +334,7 @@ export default function App() {
           <TreemapChart
             applications={applications}
             onSelectApplication={(app) => {
-              setReviewingApp(app);
+              setActiveTab('crm');
             }}
           />
         )}

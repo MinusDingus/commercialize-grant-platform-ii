@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { GrantApplication, IndustrySector, MalaysianState } from '../../types/grant';
+import { ApplicationDossierModal } from '../common/ApplicationDossierModal';
 import {
   Layers,
   MapPin,
@@ -23,6 +24,10 @@ import {
   Search,
   Filter,
   Sparkles,
+  ChevronDown,
+  ChevronUp,
+  X,
+  ExternalLink,
 } from 'lucide-react';
 
 interface TreemapProps {
@@ -46,6 +51,15 @@ interface TileItem {
   borderHex: string;
 }
 
+interface DrilldownState {
+  id: string;
+  title: string;
+  subtitle: string;
+  badgeLabel?: string;
+  badgeColor?: string;
+  filterFn: (app: GrantApplication) => boolean;
+}
+
 const SECTOR_COLOR_MAP: Record<IndustrySector, { bg: string; border: string; badge: string; text: string }> = {
   'AgriTech & Food Security': { bg: '#ecfdf5', border: '#10b981', badge: '#059669', text: '#064e3b' },
   'Deep Tech & AI': { bg: '#eef2ff', border: '#6366f1', badge: '#4f46e5', text: '#312e81' },
@@ -64,7 +78,14 @@ export const TreemapChart: React.FC<TreemapProps> = ({
   const [selectedSector, setSelectedSector] = useState<string>('all');
   const [searchFilter, setSearchFilter] = useState<string>('');
 
-  // Filtered applications
+  // Interactive drilldown dropdown state
+  const [activeDrilldown, setActiveDrilldown] = useState<DrilldownState | null>(null);
+  const [drilldownSearch, setDrilldownSearch] = useState<string>('');
+
+  // Dossier modal view for inspecting the actual form directly from statistics
+  const [selectedDossierApp, setSelectedDossierApp] = useState<GrantApplication | null>(null);
+
+  // Filtered applications by sector & search
   const filteredApps = useMemo(() => {
     return applications.filter((app) => {
       const matchSector = selectedSector === 'all' || app.company.sector === selectedSector;
@@ -103,6 +124,32 @@ export const TreemapChart: React.FC<TreemapProps> = ({
   const baselinePassCount = useMemo(() => {
     return filteredApps.filter((a) => a.baselinePassed || (a.compositeScore !== undefined && a.compositeScore >= 75)).length;
   }, [filteredApps]);
+
+  // 1 to 5 criteria averages computed from actual reviewer scores
+  const criteriaAverages = useMemo(() => {
+    if (scoredApps.length === 0) return { market: 0, tech: 0, team: 0, finance: 0, ecosystem: 0 };
+    let mSum = 0, tSum = 0, teamSum = 0, fSum = 0, eSum = 0;
+    let count = 0;
+    scoredApps.forEach((a) => {
+      const r = a.reviewer1Score || a.reviewer2Score;
+      if (r?.scores) {
+        mSum += r.scores.marketPotential || 0;
+        tSum += r.scores.techFeasibility || 0;
+        teamSum += r.scores.teamCapability || 0;
+        fSum += r.scores.financialSoundness || 0;
+        eSum += r.scores.ecosystemImpact || 0;
+        count++;
+      }
+    });
+    if (count === 0) return { market: 0, tech: 0, team: 0, finance: 0, ecosystem: 0 };
+    return {
+      market: Number((mSum / count).toFixed(1)),
+      tech: Number((tSum / count).toFixed(1)),
+      team: Number((teamSum / count).toFixed(1)),
+      finance: Number((fSum / count).toFixed(1)),
+      ecosystem: Number((eSum / count).toFixed(1)),
+    };
+  }, [scoredApps]);
 
   // Score distribution brackets
   const scoreBrackets = useMemo(() => {
@@ -167,7 +214,6 @@ export const TreemapChart: React.FC<TreemapProps> = ({
           if (clean) countryMap.set(clean, (countryMap.get(clean) || 0) + 1);
         });
       }
-      // Check narrative for countries
       const text = `${app.market?.targetMarket || ''} ${app.market?.revenueModel || ''}`.toLowerCase();
       ['singapore', 'indonesia', 'thailand', 'vietnam', 'philippines', 'australia', 'japan', 'china', 'united states', 'middle east', 'europe'].forEach((cnt) => {
         if (text.includes(cnt)) {
@@ -186,7 +232,7 @@ export const TreemapChart: React.FC<TreemapProps> = ({
   // Form Tracking Statistics
   const formTrackingStats = useMemo(() => {
     const total = filteredApps.length;
-    const form1Complete = total; // All ingested apps have completed Form 1
+    const form1Complete = total;
     const bothReviewers = filteredApps.filter((a) => a.reviewer1Score && a.reviewer2Score).length;
     const singleReviewer = filteredApps.filter((a) => (a.reviewer1Score && !a.reviewer2Score) || (!a.reviewer1Score && a.reviewer2Score)).length;
     const pendingReviewers = filteredApps.filter((a) => !a.reviewer1Score && !a.reviewer2Score).length;
@@ -202,11 +248,11 @@ export const TreemapChart: React.FC<TreemapProps> = ({
     };
 
     const statusFunnel = [
-      { stage: '1. Form 1 Ingested', count: total, pct: 100, color: 'bg-slate-400' },
-      { stage: '2. Reviewer Scored', count: bothReviewers + singleReviewer, pct: total ? Math.round(((bothReviewers + singleReviewer) / total) * 100) : 0, color: 'bg-amber-500' },
-      { stage: '3. Baseline Shortlisted', count: baselinePassCount, pct: total ? Math.round((baselinePassCount / total) * 100) : 0, color: 'bg-sky-500' },
-      { stage: '4. Form 2 / Due Diligence', count: form2Linked + filteredApps.filter(a => a.status === 'analyst_due_diligence').length, pct: total ? Math.round(((form2Linked + filteredApps.filter(a => a.status === 'analyst_due_diligence').length) / total) * 100) : 0, color: 'bg-indigo-600' },
-      { stage: '5. Grant Awarded', count: filteredApps.filter(a => a.status === 'awarded').length, pct: total ? Math.round((filteredApps.filter(a => a.status === 'awarded').length / total) * 100) : 0, color: 'bg-emerald-600' },
+      { key: 'form1_ingested', stage: '1. Form 1 Ingested', count: total, pct: 100, color: 'bg-slate-400', filterFn: () => true },
+      { key: 'scored', stage: '2. Reviewer Scored', count: bothReviewers + singleReviewer, pct: total ? Math.round(((bothReviewers + singleReviewer) / total) * 100) : 0, color: 'bg-amber-500', filterFn: (a: GrantApplication) => !!(a.reviewer1Score || a.reviewer2Score) },
+      { key: 'shortlisted', stage: '3. Baseline Shortlisted', count: baselinePassCount, pct: total ? Math.round((baselinePassCount / total) * 100) : 0, color: 'bg-sky-500', filterFn: (a: GrantApplication) => !!(a.baselinePassed || (a.compositeScore !== undefined && a.compositeScore >= 75)) },
+      { key: 'due_diligence', stage: '4. Form 2 / Due Diligence', count: form2Linked + filteredApps.filter(a => a.status === 'analyst_due_diligence').length, pct: total ? Math.round(((form2Linked + filteredApps.filter(a => a.status === 'analyst_due_diligence').length) / total) * 100) : 0, color: 'bg-indigo-600', filterFn: (a: GrantApplication) => !!(a.supplementarySubmissions?.length || a.status === 'analyst_due_diligence') },
+      { key: 'awarded', stage: '5. Grant Awarded', count: filteredApps.filter(a => a.status === 'awarded').length, pct: total ? Math.round((filteredApps.filter(a => a.status === 'awarded').length / total) * 100) : 0, color: 'bg-emerald-600', filterFn: (a: GrantApplication) => a.status === 'awarded' },
     ];
 
     return {
@@ -278,24 +324,63 @@ export const TreemapChart: React.FC<TreemapProps> = ({
     return computedTiles;
   }, [filteredApps, totalFunding]);
 
+  // Applications matching the active drilldown dropdown
+  const drilldownApplications = useMemo(() => {
+    if (!activeDrilldown) return [];
+    const base = filteredApps.filter(activeDrilldown.filterFn);
+    if (!drilldownSearch.trim()) return base;
+    const q = drilldownSearch.toLowerCase();
+    return base.filter((app) =>
+      app.company.name.toLowerCase().includes(q) ||
+      app.technology.productName.toLowerCase().includes(q) ||
+      app.id.toLowerCase().includes(q) ||
+      app.applicant.fullName.toLowerCase().includes(q)
+    );
+  }, [filteredApps, activeDrilldown, drilldownSearch]);
+
+  const toggleDrilldown = (state: DrilldownState) => {
+    if (activeDrilldown?.id === state.id) {
+      setActiveDrilldown(null);
+    } else {
+      setActiveDrilldown(state);
+      setDrilldownSearch('');
+    }
+  };
+
   return (
     <div className="space-y-6">
-      {/* Top Statistical KPI Strip */}
+      {/* Top Statistical KPI Strip (Clickable to reveal application dropdown) */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5">
-        <div className="bg-white p-4 border border-slate-200 rounded-xl shadow-2xs">
+        <button
+          type="button"
+          onClick={() =>
+            toggleDrilldown({
+              id: 'kpi-all',
+              title: 'All Ingested Applications',
+              subtitle: 'Full list of grant proposals currently in pipeline',
+              badgeLabel: `${filteredApps.length} Applications`,
+              badgeColor: 'bg-sky-100 text-sky-800 border-sky-300',
+              filterFn: () => true,
+            })
+          }
+          className={`bg-white p-4 border rounded-xl shadow-2xs text-left transition-all cursor-pointer group hover:border-sky-400 hover:shadow-xs ${
+            activeDrilldown?.id === 'kpi-all' ? 'ring-2 ring-sky-500 border-sky-500 bg-sky-50/20' : 'border-slate-200'
+          }`}
+        >
           <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
-            <span>Total Intake Applications</span>
+            <span className="font-semibold group-hover:text-sky-700">Total Intake Applications</span>
             <Building2 className="w-4 h-4 text-sky-600" />
           </div>
           <div className="text-2xl font-bold font-mono text-slate-900 tabular-nums">
             {filteredApps.length}
           </div>
-          <div className="text-[11px] text-slate-500 mt-1 flex items-center gap-1">
+          <div className="text-[11px] text-slate-500 mt-1 flex items-center justify-between">
             <span className="font-semibold text-emerald-700">{scoredApps.length} Scored</span>
-            <span>·</span>
-            <span>{filteredApps.length - scoredApps.length} Pending</span>
+            <span className="text-[10px] text-sky-700 font-bold group-hover:underline flex items-center gap-0.5">
+              Forms ▾
+            </span>
           </div>
-        </div>
+        </button>
 
         <div className="bg-white p-4 border border-slate-200 rounded-xl shadow-2xs">
           <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
@@ -325,32 +410,171 @@ export const TreemapChart: React.FC<TreemapProps> = ({
           </div>
         </div>
 
-        <div className="bg-white p-4 border border-slate-200 rounded-xl shadow-2xs">
+        <button
+          type="button"
+          onClick={() =>
+            toggleDrilldown({
+              id: 'kpi-baseline',
+              title: 'Shortlisted Applications (Score ≥ 75%)',
+              subtitle: 'Applications passing commercial threshold and ready for due diligence',
+              badgeLabel: `${baselinePassCount} Shortlisted`,
+              badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+              filterFn: (a) => !!(a.baselinePassed || (a.compositeScore !== undefined && a.compositeScore >= 75)),
+            })
+          }
+          className={`bg-white p-4 border rounded-xl shadow-2xs text-left transition-all cursor-pointer group hover:border-emerald-400 hover:shadow-xs ${
+            activeDrilldown?.id === 'kpi-baseline' ? 'ring-2 ring-emerald-500 border-emerald-500 bg-emerald-50/20' : 'border-slate-200'
+          }`}
+        >
           <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
-            <span>Shortlisted Baseline Met</span>
+            <span className="font-semibold group-hover:text-emerald-700">Shortlisted Baseline Met</span>
             <Award className="w-4 h-4 text-sky-600" />
           </div>
           <div className="text-2xl font-bold font-mono text-sky-900 tabular-nums">
             {baselinePassCount}
           </div>
-          <div className="text-[11px] text-sky-700 mt-1">
-            Surpassed commercial threshold (&ge; 75%)
+          <div className="text-[11px] text-sky-700 mt-1 flex items-center justify-between">
+            <span>&ge; 75% Baseline</span>
+            <span className="text-[10px] text-emerald-700 font-bold group-hover:underline flex items-center gap-0.5">
+              Forms ▾
+            </span>
           </div>
-        </div>
+        </button>
 
-        <div className="bg-white p-4 border border-slate-200 rounded-xl shadow-2xs">
+        <button
+          type="button"
+          onClick={() =>
+            toggleDrilldown({
+              id: 'kpi-form2',
+              title: 'Form 2 (Due Diligence) Submissions',
+              subtitle: 'Applications with submitted commercial market traction and 3-year expansion models',
+              badgeLabel: `${formTrackingStats.form2Linked} Form 2 Linked`,
+              badgeColor: 'bg-indigo-100 text-indigo-800 border-indigo-300',
+              filterFn: (a) => !!(a.supplementarySubmissions && a.supplementarySubmissions.length > 0),
+            })
+          }
+          className={`bg-white p-4 border rounded-xl shadow-2xs text-left transition-all cursor-pointer group hover:border-indigo-400 hover:shadow-xs ${
+            activeDrilldown?.id === 'kpi-form2' ? 'ring-2 ring-indigo-500 border-indigo-500 bg-indigo-50/20' : 'border-slate-200'
+          }`}
+        >
           <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
-            <span>Form 2 Due Diligence</span>
+            <span className="font-semibold group-hover:text-indigo-700">Form 2 Due Diligence</span>
             <FileCheck2 className="w-4 h-4 text-teal-600" />
           </div>
           <div className="text-2xl font-bold font-mono text-slate-900 tabular-nums">
             {formTrackingStats.form2Linked}
           </div>
-          <div className="text-[11px] text-slate-500 mt-1">
-            Market traction &amp; 3-year models linked
+          <div className="text-[11px] text-slate-500 mt-1 flex items-center justify-between">
+            <span>Market traction linked</span>
+            <span className="text-[10px] text-indigo-700 font-bold group-hover:underline flex items-center gap-0.5">
+              Forms ▾
+            </span>
           </div>
-        </div>
+        </button>
       </div>
+
+      {/* INTERACTIVE STATISTIC DRILLDOWN DROPDOWN PANEL */}
+      {activeDrilldown && (
+        <div className="bg-white border-2 border-sky-400 rounded-2xl p-5 shadow-lg space-y-4 animate-in slide-in-from-top-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-sky-100 text-sky-800 flex items-center justify-center font-bold">
+                <FileSpreadsheet className="w-5 h-5 text-sky-700" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-bold text-sm text-slate-900">{activeDrilldown.title}</h3>
+                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${activeDrilldown.badgeColor || 'bg-sky-50 text-sky-800 border-sky-200'}`}>
+                    {activeDrilldown.badgeLabel || `${drilldownApplications.length} Applications`}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">{activeDrilldown.subtitle}</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Filter forms..."
+                  value={drilldownSearch}
+                  onChange={(e) => setDrilldownSearch(e.target.value)}
+                  className="text-xs pl-8 pr-2.5 py-1.5 border border-slate-200 rounded-lg w-44 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setActiveDrilldown(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
+                title="Close dropdown"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {drilldownApplications.length === 0 ? (
+            <div className="p-8 text-center text-slate-400 text-xs">
+              No applications match this specific statistic filter.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[380px] overflow-y-auto pr-1">
+              {drilldownApplications.map((app) => (
+                <div
+                  key={app.id}
+                  className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-2 hover:border-sky-300 hover:bg-white transition-all text-xs"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono font-bold text-sky-800 bg-white px-2 py-0.5 rounded border border-sky-200 text-[11px]">
+                      {app.id}
+                    </span>
+                    <span className="font-mono font-bold text-xs text-slate-900">
+                      {app.compositeScore !== undefined ? `${app.compositeScore}%` : 'Score Pending'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <h4 className="font-bold text-slate-900 truncate" title={app.company.name}>
+                      {app.company.name}
+                    </h4>
+                    <p className="text-[11px] text-slate-500 truncate" title={app.technology.productName}>
+                      {app.technology.productName}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-200/60">
+                    <span>TRL {app.technology.trlLevel} · {app.company.state}</span>
+                    <span className="font-mono font-semibold text-slate-700">RM {(app.market.fundingRequested / 1000).toLocaleString()}K</span>
+                  </div>
+
+                  {/* Direct Link to Actual Form Dossier */}
+                  <div className="pt-1 flex items-center justify-between gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDossierApp(app)}
+                      className="flex-1 py-1 px-2 bg-sky-700 hover:bg-sky-800 text-white rounded font-semibold text-[11px] flex items-center justify-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                    >
+                      <FileText className="w-3 h-3" />
+                      <span>Open Form Dossier</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onSelectApplication(app)}
+                      className="py-1 px-2 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 rounded font-semibold text-[11px] flex items-center gap-1 transition-colors cursor-pointer"
+                      title="Inspect in CRM pipeline view"
+                    >
+                      <ArrowRight className="w-3 h-3 text-slate-500" />
+                      <span>CRM</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Navigation Sub-Tabs & Filtering Bar */}
       <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-2xs flex flex-wrap items-center justify-between gap-3">
@@ -359,7 +583,7 @@ export const TreemapChart: React.FC<TreemapProps> = ({
           <button
             type="button"
             onClick={() => setActiveSubTab('score_dist')}
-            className={`px-3 py-1.5 text-xs font-bold rounded-lg flex items-center gap-1.5 transition-all ${
+            className={`px-3 py-1.5 text-xs font-bold rounded-lg flex items-center gap-1.5 transition-all cursor-pointer ${
               activeSubTab === 'score_dist'
                 ? 'bg-sky-700 text-white shadow-2xs'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
@@ -372,7 +596,7 @@ export const TreemapChart: React.FC<TreemapProps> = ({
           <button
             type="button"
             onClick={() => setActiveSubTab('geo_dist')}
-            className={`px-3 py-1.5 text-xs font-bold rounded-lg flex items-center gap-1.5 transition-all ${
+            className={`px-3 py-1.5 text-xs font-bold rounded-lg flex items-center gap-1.5 transition-all cursor-pointer ${
               activeSubTab === 'geo_dist'
                 ? 'bg-sky-700 text-white shadow-2xs'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
@@ -385,7 +609,7 @@ export const TreemapChart: React.FC<TreemapProps> = ({
           <button
             type="button"
             onClick={() => setActiveSubTab('form_tracking')}
-            className={`px-3 py-1.5 text-xs font-bold rounded-lg flex items-center gap-1.5 transition-all ${
+            className={`px-3 py-1.5 text-xs font-bold rounded-lg flex items-center gap-1.5 transition-all cursor-pointer ${
               activeSubTab === 'form_tracking'
                 ? 'bg-sky-700 text-white shadow-2xs'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
@@ -398,7 +622,7 @@ export const TreemapChart: React.FC<TreemapProps> = ({
           <button
             type="button"
             onClick={() => setActiveSubTab('treemap')}
-            className={`px-3 py-1.5 text-xs font-bold rounded-lg flex items-center gap-1.5 transition-all ${
+            className={`px-3 py-1.5 text-xs font-bold rounded-lg flex items-center gap-1.5 transition-all cursor-pointer ${
               activeSubTab === 'treemap'
                 ? 'bg-sky-700 text-white shadow-2xs'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
@@ -463,7 +687,7 @@ export const TreemapChart: React.FC<TreemapProps> = ({
                   Composite Score Distribution &amp; Qualification Brackets
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Evaluation scores across dual-reviewer weighted rubrics against the 75% shortlist baseline
+                  Click any score bracket below to open the application dropdown and inspect actual form dossiers
                 </p>
               </div>
 
@@ -472,16 +696,38 @@ export const TreemapChart: React.FC<TreemapProps> = ({
               </div>
             </div>
 
-            {/* Score Brackets Visual Bars */}
+            {/* Score Brackets Visual Bars (Clickable) */}
             <div className="space-y-3 pt-1">
               {scoreBrackets.map((bracket) => {
                 const pct = scoredApps.length > 0 ? Math.round((bracket.count / scoredApps.length) * 100) : 0;
+                const isSelected = activeDrilldown?.id === `bracket-${bracket.key}`;
                 return (
-                  <div key={bracket.key} className="space-y-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-semibold text-slate-800 flex items-center gap-2">
+                  <div
+                    key={bracket.key}
+                    onClick={() =>
+                      toggleDrilldown({
+                        id: `bracket-${bracket.key}`,
+                        title: `Score Bracket: ${bracket.label}`,
+                        subtitle: `Applications with composite evaluator scores between ${bracket.min}% and ${bracket.max}%`,
+                        badgeLabel: `${bracket.count} Applications (${pct}%)`,
+                        badgeColor: bracket.bgLight,
+                        filterFn: (app) => {
+                          const s = app.compositeScore || 0;
+                          return s >= bracket.min && s <= bracket.max;
+                        },
+                      })
+                    }
+                    className={`p-2.5 rounded-xl border transition-all cursor-pointer group ${
+                      isSelected
+                        ? 'border-sky-500 bg-sky-50/50 shadow-2xs'
+                        : 'border-transparent hover:border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between text-xs mb-1.5">
+                      <span className="font-semibold text-slate-800 flex items-center gap-2 group-hover:text-sky-700">
                         <span className={`w-2.5 h-2.5 rounded-full ${bracket.color}`} />
                         <span>{bracket.label}</span>
+                        <span className="text-[10px] text-slate-400 font-normal">▾ click to view forms</span>
                       </span>
                       <div className="flex items-center gap-2">
                         <span className="font-mono font-bold text-slate-900">{bracket.count} apps</span>
@@ -548,12 +794,30 @@ export const TreemapChart: React.FC<TreemapProps> = ({
                     {filteredApps.filter((a) => a.reviewer1Score && a.reviewer2Score).length}
                   </span>
                 </div>
-                <div className="flex justify-between items-center py-1 border-b border-slate-100">
-                  <span className="text-slate-500">Reviewer 3 Arbitrations</span>
-                  <span className="font-mono font-bold text-indigo-700">
-                    {reviewerDiscrepancies.length} applications
+                <button
+                  type="button"
+                  onClick={() =>
+                    toggleDrilldown({
+                      id: 'variance-arbitration',
+                      title: 'Reviewer Arbitrations (>15% Score Variance)',
+                      subtitle: 'Applications requiring Reviewer 3 / Analyst arbitration due to evaluator divergence',
+                      badgeLabel: `${reviewerDiscrepancies.length} Files`,
+                      badgeColor: 'bg-amber-100 text-amber-900 border-amber-300',
+                      filterFn: (app) => {
+                        if (app.reviewer1Score && app.reviewer2Score) {
+                          return Math.abs(app.reviewer1Score.totalWeightedScore - app.reviewer2Score.totalWeightedScore) >= 15;
+                        }
+                        return false;
+                      },
+                    })
+                  }
+                  className="w-full flex justify-between items-center py-1 border-b border-slate-100 hover:bg-slate-50 px-1 rounded text-left cursor-pointer group"
+                >
+                  <span className="text-slate-500 group-hover:text-indigo-700">Reviewer 3 Arbitrations</span>
+                  <span className="font-mono font-bold text-indigo-700 flex items-center gap-1">
+                    {reviewerDiscrepancies.length} files ▾
                   </span>
-                </div>
+                </button>
                 <div className="flex justify-between items-center py-1 border-b border-slate-100">
                   <span className="text-slate-500">Score Consensus Rate</span>
                   <span className="font-mono font-bold text-emerald-700">
@@ -568,31 +832,31 @@ export const TreemapChart: React.FC<TreemapProps> = ({
               </div>
             </div>
 
-            {/* Box 3: 5-Point Dimension Averages */}
+            {/* Box 3: 5-Point Dimension Averages (1 to 5 Scale) */}
             <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3 shadow-xs">
               <span className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                Criteria Dimension Averages
+                Criteria Dimension Averages (1 - 5 Scale)
               </span>
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between items-center py-1 border-b border-slate-100">
                   <span className="text-slate-500">Commercial &amp; Market (25%)</span>
-                  <span className="font-mono font-bold text-sky-800">7.2 / 10</span>
+                  <span className="font-mono font-bold text-sky-800">{criteriaAverages.market} / 5</span>
                 </div>
                 <div className="flex justify-between items-center py-1 border-b border-slate-100">
                   <span className="text-slate-500">Technical &amp; TRL (25%)</span>
-                  <span className="font-mono font-bold text-sky-800">7.6 / 10</span>
+                  <span className="font-mono font-bold text-sky-800">{criteriaAverages.tech} / 5</span>
                 </div>
                 <div className="flex justify-between items-center py-1 border-b border-slate-100">
                   <span className="text-slate-500">Team &amp; Governance (20%)</span>
-                  <span className="font-mono font-bold text-sky-800">7.1 / 10</span>
+                  <span className="font-mono font-bold text-sky-800">{criteriaAverages.team} / 5</span>
                 </div>
                 <div className="flex justify-between items-center py-1 border-b border-slate-100">
-                  <span className="text-slate-500">Financial Soundness (15%)</span>
-                  <span className="font-mono font-bold text-sky-800">6.8 / 10</span>
+                  <span className="text-slate-500">Financial Soundness (20%)</span>
+                  <span className="font-mono font-bold text-sky-800">{criteriaAverages.finance} / 5</span>
                 </div>
                 <div className="flex justify-between items-center py-1">
-                  <span className="text-slate-500">Ecosystem Impact (15%)</span>
-                  <span className="font-mono font-bold text-sky-800">7.0 / 10</span>
+                  <span className="text-slate-500">Ecosystem Impact (10%)</span>
+                  <span className="font-mono font-bold text-sky-800">{criteriaAverages.ecosystem} / 5</span>
                 </div>
               </div>
             </div>
@@ -604,7 +868,7 @@ export const TreemapChart: React.FC<TreemapProps> = ({
       {applications.length > 0 && activeSubTab === 'geo_dist' && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Malaysian States Ranking Table */}
+            {/* Malaysian States Ranking Table (Clickable to reveal applications) */}
             <div className="lg:col-span-7 bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div>
@@ -612,27 +876,43 @@ export const TreemapChart: React.FC<TreemapProps> = ({
                     <MapPin className="w-4 h-4 text-emerald-600" />
                     Malaysian State Distribution Ranking
                   </h3>
-                  <p className="text-xs text-slate-500">Geographic footprint of grant proposals across Peninsular &amp; East Malaysia</p>
+                  <p className="text-xs text-slate-500">Click any state row to view all matching application forms</p>
                 </div>
                 <span className="text-xs font-mono font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded">
                   {stateDistribution.length} States Active
                 </span>
               </div>
 
-              <div className="space-y-2.5 max-h-[460px] overflow-y-auto pr-1">
+              <div className="space-y-2 max-h-[460px] overflow-y-auto pr-1">
                 {stateDistribution.map((item, index) => {
                   const sharePct = filteredApps.length > 0 ? Math.round((item.count / filteredApps.length) * 100) : 0;
+                  const isSelected = activeDrilldown?.id === `state-${item.state}`;
                   return (
                     <div
                       key={item.state}
-                      className="border border-slate-200/80 rounded-lg p-3 bg-slate-50/50 hover:bg-slate-100/70 transition-colors text-xs space-y-1.5"
+                      onClick={() =>
+                        toggleDrilldown({
+                          id: `state-${item.state}`,
+                          title: `State: ${item.state}`,
+                          subtitle: `Applications originating from ${item.state} totaling RM ${(item.funding / 1000).toLocaleString()}K`,
+                          badgeLabel: `${item.count} Applications`,
+                          badgeColor: 'bg-emerald-50 text-emerald-800 border-emerald-300',
+                          filterFn: (app) => (app.company.state || 'Kuala Lumpur') === item.state,
+                        })
+                      }
+                      className={`border rounded-lg p-3 transition-all cursor-pointer group text-xs space-y-1.5 ${
+                        isSelected
+                          ? 'border-emerald-500 bg-emerald-50/40 shadow-xs ring-1 ring-emerald-400'
+                          : 'border-slate-200/80 bg-slate-50/50 hover:bg-white hover:border-emerald-300'
+                      }`}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 font-bold flex items-center justify-center text-[10px]">
                             {index + 1}
                           </span>
-                          <span className="font-bold text-slate-900">{item.state}</span>
+                          <span className="font-bold text-slate-900 group-hover:text-emerald-800">{item.state}</span>
+                          <span className="text-[10px] text-slate-400 font-normal">▾ forms</span>
                         </div>
                         <div className="flex items-center gap-3">
                           <span className="font-mono font-bold text-sky-800">
@@ -656,7 +936,7 @@ export const TreemapChart: React.FC<TreemapProps> = ({
               </div>
             </div>
 
-            {/* Country & Export Expansion Metrics */}
+            {/* Country & Export Expansion Metrics (Clickable) */}
             <div className="lg:col-span-5 space-y-4">
               <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
                 <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -665,7 +945,7 @@ export const TreemapChart: React.FC<TreemapProps> = ({
                       <Globe2 className="w-4 h-4 text-sky-600" />
                       Export Target Markets &amp; Countries
                     </h3>
-                    <p className="text-xs text-slate-500">Top international countries targeted for commercial export</p>
+                    <p className="text-xs text-slate-500">Click any country to view ventures targeting that market</p>
                   </div>
                 </div>
 
@@ -673,23 +953,49 @@ export const TreemapChart: React.FC<TreemapProps> = ({
                   {exportCountries.length === 0 ? (
                     <p className="text-xs text-slate-400">Export targets captured in company market filings.</p>
                   ) : (
-                    exportCountries.map((c) => (
-                      <div
-                        key={c.country}
-                        className="flex items-center justify-between p-2.5 rounded-lg border border-slate-200/70 bg-slate-50 text-xs"
-                      >
-                        <span className="font-semibold text-slate-800">{c.country}</span>
-                        <span className="font-mono font-bold text-sky-700 bg-sky-100/60 px-2 py-0.5 rounded text-[11px]">
-                          {c.count} ventures targeting
-                        </span>
-                      </div>
-                    ))
+                    exportCountries.map((c) => {
+                      const isSelected = activeDrilldown?.id === `country-${c.country}`;
+                      return (
+                        <div
+                          key={c.country}
+                          onClick={() =>
+                            toggleDrilldown({
+                              id: `country-${c.country}`,
+                              title: `Export Target Country: ${c.country}`,
+                              subtitle: `Applications with declared commercial expansion into ${c.country}`,
+                              badgeLabel: `${c.count} Ventures`,
+                              badgeColor: 'bg-sky-50 text-sky-800 border-sky-300',
+                              filterFn: (app) => {
+                                const inArray = app.market?.exportTargetCountries?.some(
+                                  (tc) => tc.toLowerCase().includes(c.country.toLowerCase())
+                                );
+                                const inText = `${app.market?.targetMarket || ''} ${app.market?.revenueModel || ''}`.toLowerCase().includes(c.country.toLowerCase());
+                                return !!(inArray || inText);
+                              },
+                            })
+                          }
+                          className={`flex items-center justify-between p-2.5 rounded-lg border text-xs transition-all cursor-pointer group ${
+                            isSelected
+                              ? 'border-sky-500 bg-sky-50/50 shadow-xs ring-1 ring-sky-400'
+                              : 'border-slate-200/70 bg-slate-50 hover:bg-white hover:border-sky-300'
+                          }`}
+                        >
+                          <span className="font-semibold text-slate-800 group-hover:text-sky-800 flex items-center gap-1.5">
+                            <span>{c.country}</span>
+                            <span className="text-[10px] text-slate-400 font-normal">▾ forms</span>
+                          </span>
+                          <span className="font-mono font-bold text-sky-700 bg-sky-100/60 px-2 py-0.5 rounded text-[11px]">
+                            {c.count} ventures targeting
+                          </span>
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               </div>
 
               {/* Ownership & Equity Standing */}
-              <div className="bg-linear-to-br from-slate-900 to-indigo-950 text-white rounded-xl p-5 shadow-xs space-y-3 text-xs">
+              <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white rounded-xl p-5 shadow-xs space-y-3 text-xs">
                 <div className="flex items-center gap-2">
                   <Compass className="w-4 h-4 text-sky-400" />
                   <h4 className="font-bold text-slate-100">National Equity &amp; Alignment</h4>
@@ -721,7 +1027,7 @@ export const TreemapChart: React.FC<TreemapProps> = ({
       {/* SUB-TAB 3: FORM TRACKING & LIFECYCLE INTELLIGENCE */}
       {applications.length > 0 && activeSubTab === 'form_tracking' && (
         <div className="space-y-6">
-          {/* Form Tracking Pipeline Funnel */}
+          {/* Form Tracking Pipeline Funnel (Clickable) */}
           <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
@@ -729,29 +1035,49 @@ export const TreemapChart: React.FC<TreemapProps> = ({
                   <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
                   Multi-Stage Form Lifecycle &amp; Conversion Tracker
                 </h3>
-                <p className="text-xs text-slate-500">Real-time status tracking from Form 1 intake to dual-evaluations and Form 2 due diligence</p>
+                <p className="text-xs text-slate-500">Click any funnel step below to open matching application dossiers</p>
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 pt-1">
-              {formTrackingStats.statusFunnel.map((step, idx) => (
-                <div key={step.stage} className="border border-slate-200 rounded-xl p-3.5 bg-slate-50 space-y-1.5 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-900">{step.stage}</span>
-                    <span className="font-mono text-[11px] font-bold text-slate-600">{step.pct}%</span>
+              {formTrackingStats.statusFunnel.map((step) => {
+                const isSelected = activeDrilldown?.id === `funnel-${step.key}`;
+                return (
+                  <div
+                    key={step.stage}
+                    onClick={() =>
+                      toggleDrilldown({
+                        id: `funnel-${step.key}`,
+                        title: `Pipeline Stage: ${step.stage}`,
+                        subtitle: `Applications currently at or passing ${step.stage}`,
+                        badgeLabel: `${step.count} Applications (${step.pct}%)`,
+                        badgeColor: 'bg-sky-50 text-sky-800 border-sky-300',
+                        filterFn: step.filterFn,
+                      })
+                    }
+                    className={`border rounded-xl p-3.5 space-y-1.5 text-xs transition-all cursor-pointer group ${
+                      isSelected
+                        ? 'border-sky-500 bg-sky-50/50 shadow-xs ring-1 ring-sky-400'
+                        : 'border-slate-200 bg-slate-50 hover:bg-white hover:border-sky-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-900 group-hover:text-sky-700">{step.stage}</span>
+                      <span className="font-mono text-[11px] font-bold text-slate-600">{step.pct}%</span>
+                    </div>
+                    <div className="text-xl font-bold font-mono text-slate-900">
+                      {step.count}
+                    </div>
+                    <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden mt-1">
+                      <div className={`h-full ${step.color}`} style={{ width: `${step.pct}%` }} />
+                    </div>
                   </div>
-                  <div className="text-xl font-bold font-mono text-slate-900">
-                    {step.count}
-                  </div>
-                  <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden mt-1">
-                    <div className={`h-full ${step.color}`} style={{ width: `${step.pct}%` }} />
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
-          {/* Form Breakdown Comparison Cards */}
+          {/* Form Breakdown Comparison Cards (Clickable) */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             {/* Form 1: Intake Tracking */}
             <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-3 text-xs">
@@ -764,24 +1090,44 @@ export const TreemapChart: React.FC<TreemapProps> = ({
                 </span>
               </div>
 
-              <div className="space-y-2 text-slate-600">
-                <div className="flex justify-between items-center py-1 border-b border-slate-100">
+              <div className="space-y-1.5 text-slate-600">
+                <button
+                  type="button"
+                  onClick={() =>
+                    toggleDrilldown({
+                      id: 'trl-7',
+                      title: 'TRL 7 Prototype Readiness Applications',
+                      subtitle: 'Applications with prototype demonstration in operational environment',
+                      badgeLabel: `${formTrackingStats.trlBreakdown.trl7} Apps`,
+                      filterFn: (a) => a.technology.trlLevel === 7,
+                    })
+                  }
+                  className="w-full flex justify-between items-center py-1.5 px-2 rounded hover:bg-slate-50 cursor-pointer text-left border border-transparent hover:border-slate-200"
+                >
+                  <span className="font-medium text-slate-700">TRL 7 Prototype Readiness</span>
+                  <span className="font-mono font-bold text-slate-900">{formTrackingStats.trlBreakdown.trl7} apps ▾</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    toggleDrilldown({
+                      id: 'trl-89',
+                      title: 'TRL 8 & 9 Deployment Stage Applications',
+                      subtitle: 'Commercial qualification and market-ready systems',
+                      badgeLabel: `${formTrackingStats.trlBreakdown.trl8 + formTrackingStats.trlBreakdown.trl9} Apps`,
+                      filterFn: (a) => a.technology.trlLevel >= 8,
+                    })
+                  }
+                  className="w-full flex justify-between items-center py-1.5 px-2 rounded hover:bg-slate-50 cursor-pointer text-left border border-transparent hover:border-slate-200"
+                >
+                  <span className="font-medium text-slate-700">TRL 8/9 Deployment Stage</span>
+                  <span className="font-mono font-bold text-slate-900">{formTrackingStats.trlBreakdown.trl8 + formTrackingStats.trlBreakdown.trl9} apps ▾</span>
+                </button>
+
+                <div className="flex justify-between items-center py-1.5 px-2 text-slate-500">
                   <span>SSM Registration Validated</span>
                   <span className="font-bold text-emerald-700">100%</span>
-                </div>
-                <div className="flex justify-between items-center py-1 border-b border-slate-100">
-                  <span>TRL 7 Prototype Readiness</span>
-                  <span className="font-mono font-bold text-slate-900">{formTrackingStats.trlBreakdown.trl7} apps</span>
-                </div>
-                <div className="flex justify-between items-center py-1 border-b border-slate-100">
-                  <span>TRL 8/9 Deployment Stage</span>
-                  <span className="font-mono font-bold text-slate-900">{formTrackingStats.trlBreakdown.trl8 + formTrackingStats.trlBreakdown.trl9} apps</span>
-                </div>
-                <div className="flex justify-between items-center py-1">
-                  <span>Average Funding Requested</span>
-                  <span className="font-mono font-bold text-sky-800">
-                    RM {filteredApps.length ? Math.round(totalFunding / filteredApps.length / 1000) : 0}K
-                  </span>
                 </div>
               </div>
             </div>
@@ -793,27 +1139,64 @@ export const TreemapChart: React.FC<TreemapProps> = ({
                   <UserCheck className="w-4 h-4 text-indigo-600" /> Dual-Reviewer Scoring
                 </span>
                 <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-800">
-                  {formTrackingStats.bothReviewers} Dual Completed
+                  {formTrackingStats.bothReviewers} Completed
                 </span>
               </div>
 
-              <div className="space-y-2 text-slate-600">
-                <div className="flex justify-between items-center py-1 border-b border-slate-100">
-                  <span>Both Reviewers Completed</span>
-                  <span className="font-mono font-bold text-emerald-700">{formTrackingStats.bothReviewers} files</span>
-                </div>
-                <div className="flex justify-between items-center py-1 border-b border-slate-100">
-                  <span>Single Reviewer Scored</span>
-                  <span className="font-mono font-bold text-amber-700">{formTrackingStats.singleReviewer} files</span>
-                </div>
-                <div className="flex justify-between items-center py-1 border-b border-slate-100">
-                  <span>Review Pending Assignment</span>
-                  <span className="font-mono font-bold text-slate-500">{formTrackingStats.pendingReviewers} files</span>
-                </div>
-                <div className="flex justify-between items-center py-1">
-                  <span>Baseline Met (&ge; 75%)</span>
-                  <span className="font-mono font-bold text-sky-800">{baselinePassCount} files</span>
-                </div>
+              <div className="space-y-1.5 text-slate-600">
+                <button
+                  type="button"
+                  onClick={() =>
+                    toggleDrilldown({
+                      id: 'dual-both',
+                      title: 'Dual Reviewers Completed',
+                      subtitle: 'Applications with completed scoring rubrics from both Reviewer 1 and Reviewer 2',
+                      badgeLabel: `${formTrackingStats.bothReviewers} Applications`,
+                      badgeColor: 'bg-emerald-100 text-emerald-800',
+                      filterFn: (a) => !!(a.reviewer1Score && a.reviewer2Score),
+                    })
+                  }
+                  className="w-full flex justify-between items-center py-1.5 px-2 rounded hover:bg-slate-50 cursor-pointer text-left border border-transparent hover:border-slate-200"
+                >
+                  <span className="font-medium text-slate-700">Both Reviewers Completed</span>
+                  <span className="font-mono font-bold text-emerald-700">{formTrackingStats.bothReviewers} files ▾</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    toggleDrilldown({
+                      id: 'dual-single',
+                      title: 'Single Reviewer Scored (Awaiting 2nd Review)',
+                      subtitle: 'Applications scored by one reviewer, awaiting complementary technical or commercial evaluation',
+                      badgeLabel: `${formTrackingStats.singleReviewer} Applications`,
+                      badgeColor: 'bg-amber-100 text-amber-800',
+                      filterFn: (a) => !!((a.reviewer1Score && !a.reviewer2Score) || (!a.reviewer1Score && a.reviewer2Score)),
+                    })
+                  }
+                  className="w-full flex justify-between items-center py-1.5 px-2 rounded hover:bg-slate-50 cursor-pointer text-left border border-transparent hover:border-slate-200"
+                >
+                  <span className="font-medium text-slate-700">Single Reviewer Scored</span>
+                  <span className="font-mono font-bold text-amber-700">{formTrackingStats.singleReviewer} files ▾</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    toggleDrilldown({
+                      id: 'dual-pending',
+                      title: 'Review Pending Assignment',
+                      subtitle: 'Applications awaiting dual-reviewer designation',
+                      badgeLabel: `${formTrackingStats.pendingReviewers} Applications`,
+                      badgeColor: 'bg-slate-100 text-slate-800',
+                      filterFn: (a) => !a.reviewer1Score && !a.reviewer2Score,
+                    })
+                  }
+                  className="w-full flex justify-between items-center py-1.5 px-2 rounded hover:bg-slate-50 cursor-pointer text-left border border-transparent hover:border-slate-200"
+                >
+                  <span className="font-medium text-slate-700">Review Pending Assignment</span>
+                  <span className="font-mono font-bold text-slate-500">{formTrackingStats.pendingReviewers} files ▾</span>
+                </button>
               </div>
             </div>
 
@@ -828,24 +1211,46 @@ export const TreemapChart: React.FC<TreemapProps> = ({
                 </span>
               </div>
 
-              <div className="space-y-2 text-slate-600">
-                <div className="flex justify-between items-center py-1 border-b border-slate-100">
-                  <span>Audited Traction Submissions</span>
-                  <span className="font-mono font-bold text-teal-800">{formTrackingStats.form2Linked} files</span>
-                </div>
-                <div className="flex justify-between items-center py-1 border-b border-slate-100">
-                  <span>Form 2 Awaiting Response</span>
-                  <span className="font-mono font-bold text-amber-700">{formTrackingStats.form2Pending} files</span>
-                </div>
-                <div className="flex justify-between items-center py-1 border-b border-slate-100">
-                  <span>Assigned to Reviewer 3 / Analyst</span>
-                  <span className="font-mono font-bold text-slate-900">
-                    {filteredApps.filter(a => a.assignedAnalystName).length} files
-                  </span>
-                </div>
-                <div className="flex justify-between items-center py-1">
-                  <span>Commercial Models Attached</span>
-                  <span className="font-mono font-bold text-emerald-700">{formTrackingStats.form2Linked} dossiers</span>
+              <div className="space-y-1.5 text-slate-600">
+                <button
+                  type="button"
+                  onClick={() =>
+                    toggleDrilldown({
+                      id: 'form2-linked',
+                      title: 'Form 2 (Due Diligence) Submissions Linked',
+                      subtitle: 'Applications with submitted commercial market traction and 3-year expansion models',
+                      badgeLabel: `${formTrackingStats.form2Linked} Files`,
+                      badgeColor: 'bg-teal-100 text-teal-800',
+                      filterFn: (a) => !!(a.supplementarySubmissions && a.supplementarySubmissions.length > 0),
+                    })
+                  }
+                  className="w-full flex justify-between items-center py-1.5 px-2 rounded hover:bg-slate-50 cursor-pointer text-left border border-transparent hover:border-slate-200"
+                >
+                  <span className="font-medium text-slate-700">Traction Submissions Linked</span>
+                  <span className="font-mono font-bold text-teal-800">{formTrackingStats.form2Linked} files ▾</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    toggleDrilldown({
+                      id: 'form2-pending',
+                      title: 'Form 2 Awaiting Response',
+                      subtitle: 'Shortlisted applications awaiting applicant completion of Form 2 due diligence',
+                      badgeLabel: `${formTrackingStats.form2Pending} Files`,
+                      badgeColor: 'bg-amber-100 text-amber-800',
+                      filterFn: (a) => a.status === 'shortlisted' && (!a.supplementarySubmissions || a.supplementarySubmissions.length === 0),
+                    })
+                  }
+                  className="w-full flex justify-between items-center py-1.5 px-2 rounded hover:bg-slate-50 cursor-pointer text-left border border-transparent hover:border-slate-200"
+                >
+                  <span className="font-medium text-slate-700">Form 2 Awaiting Response</span>
+                  <span className="font-mono font-bold text-amber-700">{formTrackingStats.form2Pending} files ▾</span>
+                </button>
+
+                <div className="flex justify-between items-center py-1.5 px-2 text-slate-500">
+                  <span>Assigned Analyst Panel</span>
+                  <span className="font-mono font-bold text-slate-800">{filteredApps.filter(a => a.assignedAnalystName).length} files</span>
                 </div>
               </div>
             </div>
@@ -862,7 +1267,7 @@ export const TreemapChart: React.FC<TreemapProps> = ({
                 <Layers className="w-4 h-4 text-sky-600" />
                 Sector &amp; Funding Allocation Treemap
               </h3>
-              <p className="text-xs text-slate-500">Tile area is proportional to Requested Grant Amount</p>
+              <p className="text-xs text-slate-500">Click any tile to open its complete application form dossier</p>
             </div>
 
             <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -884,7 +1289,7 @@ export const TreemapChart: React.FC<TreemapProps> = ({
                   <g
                     key={tile.id}
                     transform={`translate(${tile.x}, ${tile.y})`}
-                    onClick={() => onSelectApplication(tile.app)}
+                    onClick={() => setSelectedDossierApp(tile.app)}
                     onMouseEnter={() => setHoveredTile(tile)}
                     onMouseLeave={() => setHoveredTile(null)}
                     className="transition-opacity duration-150"
@@ -960,6 +1365,18 @@ export const TreemapChart: React.FC<TreemapProps> = ({
             )}
           </div>
         </div>
+      )}
+
+      {/* Application Dossier Modal for Direct Inspection of the Actual Form */}
+      {selectedDossierApp && (
+        <ApplicationDossierModal
+          application={selectedDossierApp}
+          onClose={() => setSelectedDossierApp(null)}
+          onNavigateToCrm={(app) => {
+            setSelectedDossierApp(null);
+            onSelectApplication(app);
+          }}
+        />
       )}
     </div>
   );

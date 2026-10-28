@@ -976,44 +976,4 @@ export const SAMPLE_PREVIEW_APPLICATIONS: GrantApplication[] = [
   },
 ];
 
-export const INITIAL_NOTIFICATIONS: EmailNotification[] = [
-  {
-    id: 'email-01',
-    applicationId: 'CRG-2026-0101',
-    companyName: 'BioHarvest Dynamics Sdn Bhd',
-    recipientEmail: 'syahril@bioharvestdynamics.my',
-    recipientName: 'Dr. Syahril Nizam',
-    recipientRole: 'applicant',
-    subject: 'Application Shortlisted for Commercial Due Diligence [CRG-2026-0101]',
-    body: 'Dear Dr. Syahril Nizam,\n\nWe are pleased to inform you that your Commercialize Grant application for "PrecisionPulse Smart Harvester" has achieved a composite evaluation score of 81.0%, exceeding our shortlisted baseline threshold of 75.0%.\n\nYour application has been assigned to Lead Grant Analyst Shafiq Fauzi for the commercial and financial due diligence phase. Our team will contact you shortly to arrange the on-site verification.\n\nCongratulations on reaching this milestone.\n\nBest regards,\nGrant Secretariat Team\nCommercialize Grant Division (Dana Pengkomersialan)',
-    templateType: 'APPLICANT_SHORTLISTED',
-    sentAt: '2026-09-26T15:45:00Z',
-    status: 'delivered',
-  },
-  {
-    id: 'email-02',
-    applicationId: 'CRG-2026-0101',
-    companyName: 'BioHarvest Dynamics Sdn Bhd',
-    recipientEmail: 'shafiqfauzi@mranti.my',
-    recipientName: 'Shafiq Fauzi',
-    recipientRole: 'analyst',
-    subject: 'New Shortlisted Application Assigned for Follow-Up: CRG-2026-0101',
-    body: 'Hi Shafiq,\n\nApplication CRG-2026-0101 (BioHarvest Dynamics Sdn Bhd) has surpassed the scoring baseline with an 81.0% composite score from Reviewer 1 and Reviewer 2.\n\nYou have been designated as the Lead Analyst for this file. Please review the reviewer evaluation rubrics and schedule the site verification within 14 calendar days.\n\nLink to dossier: /crm/applications/CRG-2026-0101\n\nGrant Operations Desk',
-    templateType: 'SHORTLIST_ANALYST_ALERT',
-    sentAt: '2026-09-26T15:46:00Z',
-    status: 'delivered',
-  },
-  {
-    id: 'email-03',
-    applicationId: 'CRG-2026-0103',
-    companyName: 'VoltGrid Energy Storage Systems Sdn Bhd',
-    recipientEmail: 'kamarul@voltgridstorage.com',
-    recipientName: 'Kamarul Ariffin Bin Zainal',
-    recipientRole: 'applicant',
-    subject: 'Official Grant Award Offer Letter - Commercialize Grant [CRG-2026-0103]',
-    body: 'Dear Mr. Kamarul Ariffin,\n\nOn behalf of the Commercialization Grant Approval Committee, we take pride in extending an official Offer of Grant for RM 1,000,000 for the commercialization of "MegaCell Dual-Chem BESS".\n\nPlease find the terms of reference and milestone agreement attached to your applicant portal. Kindly execute and return the agreement within twenty-one (21) days.\n\nWarm regards,\nChairman of Commercialization Grant Committee\nDana Pengkomersialan',
-    templateType: 'GRANT_AWARD_OFFER',
-    sentAt: '2026-09-15T16:30:00Z',
-    status: 'delivered',
-  },
-];
+export const INITIAL_NOTIFICATIONS: EmailNotification[] = [];

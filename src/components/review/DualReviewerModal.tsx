@@ -118,10 +118,10 @@ const CRITERIA_CONFIG = [
 ];
 
 const getScoreTier = (score: number) => {
-  if (score >= 9) return { label: 'Benchmark / Exemplary', color: 'bg-emerald-50 text-emerald-800 border-emerald-300' };
-  if (score >= 7) return { label: 'Strong / Meets Standards', color: 'bg-sky-50 text-sky-800 border-sky-300' };
-  if (score >= 5) return { label: 'Moderate / Gaps Identified', color: 'bg-amber-50 text-amber-800 border-amber-300' };
-  return { label: 'Inadequate / High Risk', color: 'bg-rose-50 text-rose-800 border-rose-300' };
+  if (score >= 4.5) return { label: 'Benchmark / Exemplary (5/5)', color: 'bg-emerald-50 text-emerald-800 border-emerald-300' };
+  if (score >= 3.5) return { label: 'Strong / Meets Standards (4/5)', color: 'bg-sky-50 text-sky-800 border-sky-300' };
+  if (score >= 2.5) return { label: 'Moderate / Gaps Identified (3/5)', color: 'bg-amber-50 text-amber-800 border-amber-300' };
+  return { label: 'Inadequate / High Risk (1-2/5)', color: 'bg-rose-50 text-rose-800 border-rose-300' };
 };
 
 export const DualReviewerModal: React.FC<DualReviewerModalProps> = ({
@@ -140,14 +140,14 @@ export const DualReviewerModal: React.FC<DualReviewerModalProps> = ({
 
   const activeReview = application.reviewer1Score;
 
-  // Rubric scores state
+  // Rubric scores state (1 to 5 scale)
   const [scores, setScores] = useState<RubricCriteriaScores>(
     activeReview?.scores || {
-      marketPotential: 8,
-      techFeasibility: 8,
-      teamCapability: 8,
-      financialSoundness: 7,
-      ecosystemImpact: 8,
+      marketPotential: 4,
+      techFeasibility: 4,
+      teamCapability: 4,
+      financialSoundness: 3,
+      ecosystemImpact: 4,
     }
   );
 
@@ -201,11 +201,11 @@ export const DualReviewerModal: React.FC<DualReviewerModalProps> = ({
       setRecommendation(existing.recommendation || 'recommend_shortlist');
     } else {
       setScores({
-        marketPotential: 8,
-        techFeasibility: 8,
-        teamCapability: 8,
-        financialSoundness: 7,
-        ecosystemImpact: 8,
+        marketPotential: 4,
+        techFeasibility: 4,
+        teamCapability: 4,
+        financialSoundness: 3,
+        ecosystemImpact: 4,
       });
       setRemarks({
         marketPotential: '',
@@ -376,7 +376,7 @@ export const DualReviewerModal: React.FC<DualReviewerModalProps> = ({
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
-                    Weighted Evaluation Dimensions (1 – 10 Scale & Section Comments)
+                    Weighted Evaluation Dimensions (1 – 5 Scale & Section Comments)
                   </h3>
                   <span className="text-[11px] text-slate-500 italic">
                     All 5 sections require reviewer comments and score justifications
@@ -393,7 +393,7 @@ export const DualReviewerModal: React.FC<DualReviewerModalProps> = ({
                     >
                       {/* Section Title & Score Tier */}
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div>
+                         <div>
                           <span className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
                             <crit.icon className="w-4 h-4 text-sky-600" />
                             {crit.label}
@@ -407,7 +407,7 @@ export const DualReviewerModal: React.FC<DualReviewerModalProps> = ({
                             {tier.label}
                           </span>
                           <span className="font-mono text-sm font-bold text-sky-700 bg-sky-50 px-2.5 py-0.5 rounded border border-sky-200">
-                            {scores[crit.key]} / 10
+                            {scores[crit.key]} / 5
                           </span>
                           <span className="text-[10px] text-slate-400 font-medium">
                             ({crit.weight}% Weight)
@@ -415,25 +415,25 @@ export const DualReviewerModal: React.FC<DualReviewerModalProps> = ({
                         </div>
                       </div>
 
-                      {/* Quick-Pick Score Buttons (1-10) and Slider */}
+                      {/* Quick-Pick Score Buttons (1-5) and Slider */}
                       <div className="bg-slate-50/70 p-2.5 rounded-lg border border-slate-100 space-y-2">
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                            Select Score (1 - 10 Scale):
+                            Select Score (1 - 5 Scale):
                           </span>
                           <span className="text-[10px] text-slate-500 font-mono">
-                            Contribution: {((scores[crit.key] / 10) * crit.weight).toFixed(1)}% / {crit.weight}%
+                            Contribution: {((scores[crit.key] / 5) * crit.weight).toFixed(1)}% / {crit.weight}%
                           </span>
                         </div>
-                        <div className="grid grid-cols-10 gap-1">
-                          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => {
+                        <div className="grid grid-cols-5 gap-1.5">
+                          {[1, 2, 3, 4, 5].map((num) => {
                             const isSelected = scores[crit.key] === num;
                             return (
                               <button
                                 key={num}
                                 type="button"
                                 onClick={() => handleScoreChange(crit.key, num)}
-                                className={`py-1 text-xs font-bold rounded font-mono transition-all ${
+                                className={`py-1.5 text-xs font-bold rounded-lg font-mono transition-all ${
                                   isSelected
                                     ? 'bg-sky-700 text-white shadow-xs scale-105 ring-2 ring-sky-300'
                                     : 'bg-white border border-slate-200 text-slate-700 hover:bg-sky-50 hover:border-sky-300'
@@ -447,7 +447,7 @@ export const DualReviewerModal: React.FC<DualReviewerModalProps> = ({
                         <input
                           type="range"
                           min="1"
-                          max="10"
+                          max="5"
                           step="1"
                           value={scores[crit.key]}
                           onChange={(e) => handleScoreChange(crit.key, Number(e.target.value))}

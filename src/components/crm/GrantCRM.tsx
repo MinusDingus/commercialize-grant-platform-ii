@@ -157,15 +157,21 @@ export const GrantCRM: React.FC<GrantCRMProps> = ({
 
   // Filtered applications
   const filteredApps = useMemo(() => {
+    const q = (searchQuery || '').trim().toLowerCase();
     return applications.filter((app) => {
-      const matchSearch =
-        searchQuery === '' ||
-        app.company.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        app.technology.productName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        app.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        app.applicant.fullName.toLowerCase().includes(searchQuery.toLowerCase());
+      const companyName = (app.company?.name || '').toLowerCase();
+      const productName = (app.technology?.productName || '').toLowerCase();
+      const appId = (app.id || '').toLowerCase();
+      const applicantName = (app.applicant?.fullName || '').toLowerCase();
 
-      const matchSector = filterSector === 'all' || app.company.sector === filterSector;
+      const matchSearch =
+        q === '' ||
+        companyName.includes(q) ||
+        productName.includes(q) ||
+        appId.includes(q) ||
+        applicantName.includes(q);
+
+      const matchSector = filterSector === 'all' || app.company?.sector === filterSector;
       return matchSearch && matchSector;
     });
   }, [applications, searchQuery, filterSector]);
@@ -1213,7 +1219,7 @@ export const GrantCRM: React.FC<GrantCRMProps> = ({
                                   </div>
                                   {r1ScoreVal !== undefined ? (
                                     <span className="font-mono text-xs font-bold text-sky-800 bg-sky-100 px-2 py-0.5 rounded border border-sky-300">
-                                      {r1ScoreVal} / 10
+                                      {r1ScoreVal} / 5
                                     </span>
                                   ) : (
                                     <span className="text-[11px] text-slate-400 italic">Score pending</span>
@@ -1246,7 +1252,7 @@ export const GrantCRM: React.FC<GrantCRMProps> = ({
                                   </div>
                                   {r2ScoreVal !== undefined ? (
                                     <span className="font-mono text-xs font-bold text-indigo-800 bg-indigo-100 px-2 py-0.5 rounded border border-indigo-300">
-                                      {r2ScoreVal} / 10
+                                      {r2ScoreVal} / 5
                                     </span>
                                   ) : (
                                     <span className="text-[11px] text-slate-400 italic">Score pending</span>
@@ -1325,7 +1331,7 @@ export const GrantCRM: React.FC<GrantCRMProps> = ({
                                         {crit.label}
                                       </span>
                                       <span className="font-mono font-bold text-sky-800 bg-white px-2 py-0.5 rounded border border-sky-200 text-[11px]">
-                                        {sc} / 10 ({crit.weight})
+                                        {sc} / 5 ({crit.weight})
                                       </span>
                                     </div>
                                     <div className="p-2 bg-white rounded border border-slate-200 text-xs text-slate-700 italic">

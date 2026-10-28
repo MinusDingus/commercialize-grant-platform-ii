@@ -10,10 +10,21 @@ export function parseDelimitedText(text: string): string[][] {
   const clean = text.trim();
   if (!clean) return [];
 
-  // Detect delimiter: if tab exists in first line, use tab; otherwise comma
-  const firstLine = clean.split(/\r?\n/)[0];
-  const isTsv = firstLine.includes('\t');
-  const delimiter = isTsv ? '\t' : ',';
+  // Detect delimiter: count tabs, commas, and semicolons in the first non-empty lines
+  const lines = clean.split(/\r?\n/).filter(l => l.trim().length > 0);
+  const sample = lines.slice(0, 3).join('\n');
+  const tabCount = (sample.match(/\t/g) || []).length;
+  const commaCount = (sample.match(/,/g) || []).length;
+  const semiCount = (sample.match(/;/g) || []).length;
+
+  let delimiter = ',';
+  if (tabCount > commaCount && tabCount > semiCount) {
+    delimiter = '\t';
+  } else if (semiCount > commaCount && semiCount > tabCount) {
+    delimiter = ';';
+  } else {
+    delimiter = ',';
+  }
 
   const rows: string[][] = [];
   let currentRow: string[] = [];
@@ -190,16 +201,30 @@ export function parseSheetData(rawText: string, baselineThreshold = 75.0): {
 
   for (let r = 1; r < rows.length; r++) {
     const row = rows[r];
-    if (row.length < 5 || !row.some(cell => cell.trim().length > 0)) continue;
+    if (row.length < 3 || !row.some(cell => cell.trim().length > 0)) continue;
 
     try {
-      const appId =
+      const rawAppId =
         getCol(row, 'Application ID') ||
         getCol(row, 'App ID') ||
         getCol(row, 'Ref ID') ||
         getCol(row, 'Application Number') ||
-        (row[2] && /^DPF/i.test(row[2]) ? row[2].trim() : '') ||
-        `DPF-${Date.now()}-${r}`;
+        getCol(row, 'Permohonan') ||
+        (row[2] && /^D[PF]/i.test(row[2]) ? row[2].trim() : '') ||
+        '';
+
+      let appId = rawAppId ? rawAppId.trim() : '';
+      const upperAppId = appId.toUpperCase();
+      // Ensure application ID starts with DPF or DF so it satisfies commercialize grant standards
+      if (!upperAppId.startsWith('DPF') && !upperAppId.startsWith('DF')) {
+        const subId = getCol(row, 'Submission ID') || (row[3] ? row[3].trim() : '');
+        const numPart = subId.replace(/\D/g, '');
+        if (numPart.length >= 4) {
+          appId = `DPF${numPart.slice(-6).padStart(6, '0')}`;
+        } else {
+          appId = `DPF${String(230 + r).padStart(6, '0')}`;
+        }
+      }
       const submissionId = getCol(row, 'Submission ID') || getCol(row, 'Submission No') || (row[3] ? row[3].trim() : `SUB-${Date.now()}`);
       const orgName = getCol(row, '1.1.1 Organisation Name') || getCol(row, 'Organisation Name') || getCol(row, 'Company Name') || 'Enterprise Applicant';
       const ssm = getCol(row, '1.1.2 SSM Registration Number') || getCol(row, 'SSM') || '202401099231 (1509281-U)';
@@ -317,16 +342,21 @@ export function parseSheetData(rawText: string, baselineThreshold = 75.0): {
         const s6Remarks = getCol(row, 'Section 6 Combine Remarks');
         const overallRemarks = getCol(row, 'Overall Combine Remarks');
 
+        const calcScore1to5 = (val: number, maxVal: number) =>
+          Math.max(1, Math.min(5, Math.round((val / (maxVal || 1)) * 5)));
+
+        const baseScore1to5 = Math.max(1, Math.min(5, Math.round((totalScore / 100) * 5)));
+
         reviewer1Score = {
           reviewerId: 'rev-05',
           reviewerName: reviewer1,
           reviewerRole: 'Accredited Grant Evaluator (MRANTI)',
           scores: {
-            marketPotential: 6,
-            techFeasibility: 7,
-            teamCapability: 6,
-            financialSoundness: 6,
-            ecosystemImpact: 5,
+            marketPotential: calcScore1to5(s5Score, 20) || baseScore1to5,
+            techFeasibility: calcScore1to5(s4Score, 25) || baseScore1to5,
+            teamCapability: calcScore1to5(s2Score, 10) || baseScore1to5,
+            financialSoundness: calcScore1to5(s6Score, 25) || baseScore1to5,
+            ecosystemImpact: calcScore1to5(s3Score, 10) || baseScore1to5,
           },
           criterionRemarks: {
             marketPotential: s5Remarks || 'Target customer segmentation evaluated.',
@@ -346,11 +376,11 @@ export function parseSheetData(rawText: string, baselineThreshold = 75.0): {
           reviewerName: reviewer2,
           reviewerRole: 'Commercialisation Advisor (MRANTI)',
           scores: {
-            marketPotential: 6,
-            techFeasibility: 7,
-            teamCapability: 6,
-            financialSoundness: 6,
-            ecosystemImpact: 5,
+            marketPotential: calcScore1to5(s5Score, 20) || baseScore1to5,
+            techFeasibility: calcScore1to5(s4Score, 25) || baseScore1to5,
+            teamCapability: calcScore1to5(s2Score, 10) || baseScore1to5,
+            financialSoundness: calcScore1to5(s6Score, 25) || baseScore1to5,
+            ecosystemImpact: calcScore1to5(s3Score, 10) || baseScore1to5,
           },
           criterionRemarks: {
             marketPotential: s5Remarks || 'Market demand metrics reviewed.',

@@ -850,7 +850,7 @@ export const ApplicantPortal: React.FC<ApplicantPortalProps> = ({
                 type="text"
                 value={searchRefId}
                 onChange={(e) => setSearchRefId(e.target.value)}
-                placeholder="Enter Reference ID, e.g. CRG-2026-0101"
+                placeholder="Enter Reference ID, e.g. DPF000230"
                 className="flex-1 text-xs border border-slate-200 rounded-md p-2.5 font-mono uppercase focus:ring-1 focus:ring-sky-500"
               />
               <button

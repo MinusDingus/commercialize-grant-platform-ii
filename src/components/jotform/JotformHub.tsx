@@ -47,10 +47,10 @@ const FORM_1_INTAKE_PAYLOAD = {
 const FORM_2_DUE_DILIGENCE_PAYLOAD = {
   submissionID: '6019283948102941',
   formID: '24108849201902',
-  application_id: 'CRG-2026-0101', // Links back to primary application!
+  application_id: 'DPF000230', // Links back to primary application!
   ip: '175.143.28.19',
   rawRequest: {
-    application_id: 'CRG-2026-0101',
+    application_id: 'DPF000230',
     form_title: 'Stage 2 Supplementary Due Diligence (Market Traction & Future Plans)',
     market_traction_summary: 'Achieved RM 480,000 in early commercial membrane cartridges delivered across 3 semiconductor fabrication cleanrooms in Bayan Lepas, Penang. 100% pilot retention.',
     future_plan_summary: '3-Year Commercial Expansion: Scaled production to 5,000 modular cartridges/quarter, regional sales channel in Singapore & Indonesia, target ARR RM 5.8M by 2028.',
@@ -247,7 +247,7 @@ export const JotformHub: React.FC<JotformHubProps> = ({
               <li>
                 When sending the link to the applicant, prefill it: <br />
                 <code className="text-[10px] bg-slate-100 p-1 rounded block mt-1 text-indigo-700">
-                  https://form.jotform.com/YOUR_FORM_2?application_id=CRG-2026-0101
+                  https://form.jotform.com/YOUR_FORM_2?application_id=DPF000230
                 </code>
               </li>
               <li>
@@ -351,14 +351,14 @@ export const JotformHub: React.FC<JotformHubProps> = ({
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Form 2: Due Diligence (Links to CRG-2026-0101)
+              Form 2: Due Diligence (Links to DPF000230)
             </button>
           </div>
 
           <p className="text-xs text-slate-500 leading-relaxed">
             {activeFormPreset === 'form1'
               ? 'Form 1 creates a new applicant dossier in the pipeline.'
-              : 'Form 2 contains the hidden application_id "CRG-2026-0101". Notice how the webhook automatically finds the existing record and appends market traction, future plans, and new files without duplicating!'}
+              : 'Form 2 contains the hidden application_id "DPF000230". Notice how the webhook automatically finds the existing record and appends market traction, future plans, and new files without duplicating!'}
           </p>
 
           <div className="space-y-2">
